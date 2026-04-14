@@ -68,18 +68,20 @@ make build-yubihsm
 
 ```bash
 # CA
+mkdir tls
+cd tls
 openssl genrsa -out ca.key 4096
-openssl req -new -x509 -days 3650 -key ca.key -out ca.crt -subj "/CN=bridge-signer-ca"
+openssl req -new -x509 -days 365 -key tls/ca.key -out tls/ca.crt -subj "/CN=bridge-signer-ca"
 
 # Server (sidecar)
-openssl genrsa -out server.key 4096
-openssl req -new -key server.key -out server.csr -subj "/CN=bridge-signer"
-openssl x509 -req -days 3650 -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt
+openssl genrsa -out tls/server.key 4096
+openssl req -new -key tls/server.key -out tls/server.csr -subj "/CN=bridge-signer"
+openssl x509 -req -days 365 -in tls/server.csr -CA tls/ca.crt -CAkey tls/ca.key -CAcreateserial -out tls/server.crt
 
 # Client (validator)
-openssl genrsa -out client.key 4096
-openssl req -new -key client.key -out client.csr -subj "/CN=tellor-validator"
-openssl x509 -req -days 3650 -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out client.crt
+openssl genrsa -out tls/client.key 4096
+openssl req -new -key tls/client.key -out tls/client.csr -subj "/CN=tellor-validator"
+openssl x509 -req -days 365 -in tls/client.csr -CA tls/ca.crt -CAkey tls/ca.key -CAcreateserial -out tls/client.crt
 ```
 
 ### 6. Run
