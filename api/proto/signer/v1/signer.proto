@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package signer.v1;
+
+option go_package = "github.com/tellor-io/bridge-signer/api/gen/signer/v1;signerv1";
+
+// BridgeSigner is the signing service exposed by the sidecar.
+// The validator calls this during ExtendVoteHandler to sign
+// oracle attestations and valset checkpoints.
+service BridgeSigner {
+  // Sign signs the given message bytes with the secp256k1 bridge key
+  // and returns a 65-byte ECDSA signature (r || s || v).
+  // msg must be exactly 32 bytes (a hash).
+  // v is 27 or 28, compatible with Ethereum ecrecover.
+  rpc Sign(SignRequest) returns (SignResponse);
+
+  // GetPublicKey returns the compressed 33-byte secp256k1 public key.
+  // Helps the node to derive the operator address.
+  rpc GetPublicKey(GetPublicKeyRequest) returns (GetPublicKeyResponse);
+}
+
+// SignRequest is the signing request sent by the validator.
+message SignRequest {
+  // msg is the raw bytes to sign. Must be exactly 32 bytes.
+  bytes msg = 1;
+
+  // request_id is an optional caller-assigned identifier for logs.
+  string request_id = 2;
+}
+
+// SignResponse contains the resulting signature.
+message SignResponse {
+  // signature is the 65-byte secp256k1 ECDSA signature (r || s || v).
+  // Compatible with Ethereum's ecrecover, v is 27 or 28.
+  bytes signature = 1;
+}
+
+// GetPublicKeyRequest
+message GetPublicKeyRequest {}
+
+// GetPublicKeyResponse contains the public key.
+message GetPublicKeyResponse {
+  // public_key is the compressed 33-byte secp256k1 public key.
+  // The validator uses this to derive the bech32 operator address
+  // and the Ethereum address for bridge contract verification.
+  bytes public_key = 1;
+}

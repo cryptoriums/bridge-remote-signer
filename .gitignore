@@ -1,0 +1,31 @@
+# binaries
+/bin/
+
+# key material — never commit keys
+*.key
+*.pem
+*.crt
+*.csr
+*.srl
+*.p12
+*.pfx
+
+# config with secrets
+config.yaml
+config.yml
+config.local.yaml
+
+# Go
+vendor/
+*.test
+*.out
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo

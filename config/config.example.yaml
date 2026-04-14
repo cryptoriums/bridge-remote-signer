@@ -1,0 +1,57 @@
+# bridge-signer configuration
+# Copy to config.yaml and fill in your values.
+# Never commit config.yaml.
+
+signer:
+  # backend selects the signing backend: "file", "fortanixdsm", or "yubihsm".
+  # Use "yubihsm" with a YubiHSM2 device.
+  #   (requires building with: make build-yubihsm)
+  backend: file
+
+  # --- file backend ---
+  # key_path: path to hex-encoded secp256k1 private key
+  key_path: /etc/bridge-signer/bridge.key
+
+  # --- fortanixdsm backend ---
+  # dsm_api_endpoint: https://amer.smartkey.io
+  # dsm_api_key: your-api-key
+  # dsm_key_id: your-key-id (UUID format)
+  # dsm_key_name: my-bridge-key
+
+  # --- yubihsm backend ---
+  # yubihsm_adapter: "usb" for direct USB (default), "http" for yubihsm-connector
+  # yubihsm_adapter: usb
+  # yubihsm_auth_key_id: auth key on the device (TMKMS convention: 4 = validator, sign-only)
+  # yubihsm_auth_key_id: 4
+  # yubihsm_password_file: path to file containing the auth key password
+  # yubihsm_password_file: /etc/bridge-signer/yubihsm-password
+  # yubihsm_password: inline password (use password_file in production instead)
+  # yubihsm_password: validator-password
+  # yubihsm_key_id: object ID of the secp256k1 signing key on the device
+  # yubihsm_key_id: 1
+  # yubihsm_serial_number: target a specific device when multiple are connected (optional)
+  # yubihsm_serial_number: "0123456789"
+  # yubihsm_connector_addr: yubihsm-connector address (required when adapter is "http")
+  # yubihsm_connector_addr: localhost:12345
+
+server:
+  # listen_addr: gRPC server listen address
+  listen_addr: "0.0.0.0:9191"
+  health_addr: "0.0.0.0:9192"
+  # request_timeout: max time for a single RPC call
+  request_timeout: 2s
+  # max_recv_msg_size: max inbound message size in bytes
+  max_recv_msg_size: 1048576  # 1MB
+
+tls:
+  # CA certificate used to verify the validator's client certificate
+  ca_cert: /etc/bridge-signer/tls/ca.crt
+  # Sidecar's own TLS certificate and key
+  server_cert: /etc/bridge-signer/tls/server.crt
+  server_key:  /etc/bridge-signer/tls/server.key
+
+logging:
+  # level: debug | info | warn | error
+  level: info
+  # format: json (production) | text (development)
+  format: json
