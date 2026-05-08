@@ -6,15 +6,18 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/cometbft/cometbft/libs/log"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/spf13/cobra"
 
 	bridgetls "github.com/tellor-io/bridge-remote-signer/api/tls"
 	"github.com/tellor-io/bridge-remote-signer/config"
+	"github.com/tellor-io/bridge-remote-signer/consensus"
 	"github.com/tellor-io/bridge-remote-signer/health"
 	"github.com/tellor-io/bridge-remote-signer/logging"
 	"github.com/tellor-io/bridge-remote-signer/server"
@@ -101,6 +104,40 @@ func runDaemon(configPath string) error {
 		"eth_address", ethAddr,
 	)
 
+	ctx, ctxCancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer ctxCancel()
+
+	if cfg.Consensus.Enabled() {
+		cometLogger := log.NewTMLogger(log.NewSyncWriter(os.Stdout))
+
+		connKey, err := consensus.GenOrLoadConnKey(cfg.Consensus.ConnKeyFile)
+		if err != nil {
+			return fmt.Errorf("load consensus connection key: %w", err)
+		}
+		filePV, err := consensus.LoadCometFilePV(cfg.Consensus.KeyFile, cfg.Consensus.StateFile)
+		if err != nil {
+			return fmt.Errorf("consensus: load validator key: %w", err)
+		}
+		locked := consensus.NewLockedPrivValidator(filePV)
+		valAddr, err := consensus.ValidatorAddressForHandler(locked)
+		if err != nil {
+			return fmt.Errorf("consensus: get validator address: %w", err)
+		}
+		handler := consensus.ValidationRequestHandler(valAddr)
+
+		for _, raw := range strings.Split(cfg.Consensus.Targets, ",") {
+			target := strings.TrimSpace(raw)
+			if target == "" {
+				continue
+			}
+			go consensus.RunDialClient(ctx, target, cfg.Consensus.ChainID, connKey, locked, handler, cometLogger)
+		}
+		logger.Info("consensus signer started",
+			"chain_id", cfg.Consensus.ChainID,
+			"targets", cfg.Consensus.Targets,
+		)
+	}
+
 	// Build mTLS server credentials.
 	creds, err := bridgetls.NewServerCredentials(
 		cfg.TLS.CACert,
@@ -148,6 +185,8 @@ func runDaemon(configPath string) error {
 			logger.Info("server exited cleanly, shutting down", "server", exit.name)
 		}
 	}
+
+	ctxCancel() // stop consensus dial goroutines
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
