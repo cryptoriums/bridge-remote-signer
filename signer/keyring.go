@@ -17,6 +17,7 @@ import (
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cryptoriums/layer-packages/webunlock"
+	"github.com/tellor-io/bridge-remote-signer/logging"
 	"golang.org/x/term"
 )
 
@@ -30,14 +31,6 @@ func MakeKeyringCodec() codec.Codec {
 	cryptocodec.RegisterInterfaces(registry)
 	return codec.NewProtoCodec(registry)
 }
-
-// nopLogger satisfies webunlock.Logger by discarding all output. Keyring unlock
-// messages are handled by the caller; we don't need a full logger here.
-type nopLogger struct{}
-
-func (nopLogger) Info(msg string, _ ...any)  {}
-func (nopLogger) Warn(msg string, _ ...any)  {}
-func (nopLogger) Error(msg string, _ ...any) {}
 
 func BuildPasswordReader(passwordFile, webPort, keyringDir, keyName string) (io.Reader, error) {
 	if strings.EqualFold(os.Getenv("KEYRING_UNLOCK_MODE"), "web") {
@@ -63,13 +56,17 @@ func webUnlock(port, keyringDir, keyName string) (string, error) {
 	}
 	cdc := MakeKeyringCodec()
 	addr := ":" + port
+	log, err := logging.New("error", "json")
+	if err != nil {
+		return "", fmt.Errorf("create webunlock logger: %w", err)
+	}
 	return webunlock.WaitForUnlock(
 		context.Background(),
 		addr,
 		func(pass string) error {
 			return validateKeyringPass(pass, keyringDir, keyName, cdc)
 		},
-		nopLogger{},
+		log,
 	)
 }
 
