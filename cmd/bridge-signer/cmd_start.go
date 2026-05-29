@@ -6,15 +6,20 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/cometbft/cometbft/libs/log"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 
 	bridgetls "github.com/tellor-io/bridge-remote-signer/api/tls"
 	"github.com/tellor-io/bridge-remote-signer/config"
+	"github.com/tellor-io/bridge-remote-signer/consensus"
 	"github.com/tellor-io/bridge-remote-signer/health"
 	"github.com/tellor-io/bridge-remote-signer/logging"
 	"github.com/tellor-io/bridge-remote-signer/server"
@@ -101,14 +106,59 @@ func runDaemon(configPath string) error {
 		"eth_address", ethAddr,
 	)
 
-	// Build mTLS server credentials.
-	creds, err := bridgetls.NewServerCredentials(
-		cfg.TLS.CACert,
-		cfg.TLS.ServerCert,
-		cfg.TLS.ServerKey,
-	)
-	if err != nil {
-		return fmt.Errorf("build TLS credentials: %w", err)
+	ctx, ctxCancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer ctxCancel()
+
+	var consensusWg sync.WaitGroup
+	if cfg.Consensus.Enabled() {
+		cometLogger := log.NewTMLogger(log.NewSyncWriter(os.Stdout))
+
+		connKey, err := consensus.GenOrLoadConnKey(cfg.Consensus.ConnKeyFile)
+		if err != nil {
+			return fmt.Errorf("load consensus connection key: %w", err)
+		}
+		filePV, err := consensus.LoadCometFilePV(cfg.Consensus.KeyFile, cfg.Consensus.StateFile)
+		if err != nil {
+			return fmt.Errorf("consensus: load validator key: %w", err)
+		}
+		locked := consensus.NewLockedPrivValidator(filePV)
+		valAddr, err := consensus.ValidatorAddressForHandler(locked)
+		if err != nil {
+			return fmt.Errorf("consensus: get validator address: %w", err)
+		}
+		handler := consensus.ValidationRequestHandler(valAddr)
+
+		for _, raw := range strings.Split(cfg.Consensus.Targets, ",") {
+			target := strings.TrimSpace(raw)
+			if target == "" {
+				continue
+			}
+			consensusWg.Add(1)
+			go func(t string) {
+				defer consensusWg.Done()
+				consensus.RunDialClient(ctx, t, cfg.Consensus.ChainID, connKey, locked, handler, cometLogger)
+			}(target)
+		}
+		logger.Info("consensus signer started",
+			"chain_id", cfg.Consensus.ChainID,
+			"targets", cfg.Consensus.Targets,
+		)
+	}
+
+	// Build gRPC server credentials (TLS or insecure).
+	var creds credentials.TransportCredentials
+	if cfg.TLS.Insecure {
+		creds = insecure.NewCredentials()
+	} else {
+		var tlsErr error
+		creds, tlsErr = bridgetls.NewServerCredentials(
+			cfg.TLS.CACert,
+			cfg.TLS.ServerCert,
+			cfg.TLS.ServerKey,
+		)
+		if tlsErr != nil {
+			return fmt.Errorf("build TLS credentials: %w", tlsErr)
+		}
 	}
 
 	// Build and register the gRPC server.
@@ -148,6 +198,9 @@ func runDaemon(configPath string) error {
 			logger.Info("server exited cleanly, shutting down", "server", exit.name)
 		}
 	}
+
+	ctxCancel() // stop consensus dial goroutines
+	consensusWg.Wait() // wait for all consensus goroutines to exit before shutting down gRPC
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()

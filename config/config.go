@@ -20,10 +20,25 @@ const (
 // Config is the top-level configuration for bridge-signer.
 // Loaded once at startup from a YAML file.
 type Config struct {
-	Signer SignerConfig `yaml:"signer"`
-	Server ServerConfig `yaml:"server"`
-	TLS    TLSConfig    `yaml:"tls"`
-	Log    LogConfig    `yaml:"logging"`
+	Consensus ConsensusConfig `yaml:"consensus"`
+	Signer    SignerConfig    `yaml:"signer"`
+	Server    ServerConfig    `yaml:"server"`
+	TLS       TLSConfig       `yaml:"tls"`
+	Log       LogConfig       `yaml:"logging"`
+}
+
+// ConsensusConfig controls the CometBFT privval TCP signer.
+type ConsensusConfig struct {
+	ChainID     string `yaml:"chain_id"`
+	KeyFile     string `yaml:"key_file"`
+	StateFile   string `yaml:"state_file"`
+	ConnKeyFile string `yaml:"conn_key_file"`
+	Targets     string `yaml:"targets"`
+}
+
+// Enabled returns true when consensus signing is configured.
+func (c *ConsensusConfig) Enabled() bool {
+	return c.KeyFile != ""
 }
 
 // SignerConfig controls which backend holds the private key.
@@ -32,9 +47,9 @@ type SignerConfig struct {
 	Backend Backend `yaml:"backend"`
 
 	// --- File backend ---
-	KeyringDir   string `yaml:"keyring_dir"`
-	KeyName      string `yaml:"key_name"`
-	PasswordFile string `yaml:"password_file"`
+	KeyringDir    string `yaml:"keyring_dir"`
+	KeyName       string `yaml:"key_name"`
+	PasswordFile  string `yaml:"password_file"`
 
 	// --- FortanixDSM backend ---
 	DSMAPIEndpoint string `yaml:"dsm_api_endpoint"`
@@ -77,6 +92,9 @@ type ServerConfig struct {
 
 // TLSConfig holds paths to the mTLS certificate material.
 type TLSConfig struct {
+	// Insecure disables TLS entirely. Safe to use inside a private Docker network.
+	Insecure bool `yaml:"insecure"`
+
 	// CACert is the path to the CA certificate used to verify client certs.
 	CACert string `yaml:"ca_cert"`
 
@@ -141,6 +159,19 @@ func (c *Config) applyDefaults() {
 	if c.Log.Format == "" {
 		c.Log.Format = "json"
 	}
+
+	//Consensus defaults
+	if c.Consensus.Enabled() {
+		if c.Consensus.StateFile == "" {
+			c.Consensus.StateFile = "/data/priv_validator_state.json"
+		}
+		if c.Consensus.ConnKeyFile == "" {
+			c.Consensus.ConnKeyFile = "/data/connection.key"
+		}
+		if c.Consensus.Targets == "" {
+			c.Consensus.Targets = "tcp://layer:26659,tcp://layer-backup:26659"
+		}
+	}
 }
 
 // validate checks that all required fields are present and consistent.
@@ -181,18 +212,20 @@ func (c *Config) validate() error {
 		return errors.New("server.request_timeout must be positive")
 	}
 
-	if c.TLS.CACert == "" {
-		return errors.New("tls.ca_cert is required")
-	}
-	if c.TLS.ServerCert == "" {
-		return errors.New("tls.server_cert is required")
-	}
-	if c.TLS.ServerKey == "" {
-		return errors.New("tls.server_key is required")
-	}
-	for _, path := range []string{c.TLS.CACert, c.TLS.ServerCert, c.TLS.ServerKey} {
-		if _, err := os.Stat(path); err != nil {
-			return fmt.Errorf("tls file %q: %w", path, err)
+	if !c.TLS.Insecure {
+		if c.TLS.CACert == "" {
+			return errors.New("tls.ca_cert is required (or set tls.insecure: true)")
+		}
+		if c.TLS.ServerCert == "" {
+			return errors.New("tls.server_cert is required (or set tls.insecure: true)")
+		}
+		if c.TLS.ServerKey == "" {
+			return errors.New("tls.server_key is required (or set tls.insecure: true)")
+		}
+		for _, path := range []string{c.TLS.CACert, c.TLS.ServerCert, c.TLS.ServerKey} {
+			if _, err := os.Stat(path); err != nil {
+				return fmt.Errorf("tls file %q: %w", path, err)
+			}
 		}
 	}
 
@@ -206,6 +239,18 @@ func (c *Config) validate() error {
 	case "json", "text":
 	default:
 		return fmt.Errorf("logging.format %q is not valid (json|text)", c.Log.Format)
+	}
+
+	if c.Consensus.Enabled() {
+		if c.Consensus.ChainID == "" {
+			return errors.New("consensus.chain_id is required when consensus.key_file is set")
+		}
+		if c.Consensus.StateFile == "" {
+			return errors.New("consensus.state_file is required")
+		}
+		if c.Consensus.Targets == "" {
+			return errors.New("consensus.targets is required")
+		}
 	}
 
 	return nil

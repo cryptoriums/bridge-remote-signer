@@ -40,3 +40,10 @@ logging:
   level: info
   # format: json (production) | text (development)
   format: json
+
+consensus:
+  chain_id: layertest-5
+  key_file: /keys/priv_validator_key.json
+  state_file: /data/priv_validator_state.json
+  conn_key_file: /data/connection.key
+  targets: tcp://layer:26659,tcp://layer-backup:26659

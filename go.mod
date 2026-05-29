@@ -3,13 +3,13 @@ module github.com/tellor-io/bridge-remote-signer
 go 1.25.9
 
 require (
-	github.com/btcsuite/btcd/btcutil v1.1.6
+	github.com/cometbft/cometbft v0.39.1
 	github.com/cosmos/cosmos-sdk v0.54.2
+	github.com/cosmos/gogoproto v1.7.2
 	github.com/ethereum/go-ethereum v1.17.1
 	github.com/fortanix/sdkms-client-go v0.4.1
 	github.com/spf13/cobra v1.10.2
 	github.com/tellor-io/bridge-remote-signer/api v0.0.0
-	golang.org/x/crypto v0.50.0
 	golang.org/x/term v0.42.0
 	google.golang.org/grpc v1.80.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -43,15 +43,13 @@ require (
 	github.com/cockroachdb/pebble v1.1.5 // indirect
 	github.com/cockroachdb/redact v1.1.8 // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20250429170803-42689b6311bb // indirect
-	github.com/cometbft/cometbft v0.39.1 // indirect
-	github.com/cometbft/cometbft-db v0.14.3 // indirect
+	github.com/cometbft/cometbft-db v1.0.4 // indirect
 	github.com/cosmos/btcutil v1.0.5 // indirect
 	github.com/cosmos/btree v1.0.0 // indirect
 	github.com/cosmos/cosmos-db v1.1.3 // indirect
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5 // indirect
 	github.com/cosmos/cosmos-sdk/store/v2 v2.0.0 // indirect
 	github.com/cosmos/go-bip39 v1.0.0 // indirect
-	github.com/cosmos/gogoproto v1.7.2 // indirect
 	github.com/cosmos/iavl v1.2.8 // indirect
 	github.com/cosmos/ics23/go v0.11.0 // indirect
 	github.com/cosmos/ledger-cosmos-go v1.0.0 // indirect
@@ -175,6 +173,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.26.0 // indirect
+	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
