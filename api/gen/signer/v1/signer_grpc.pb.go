@@ -23,6 +23,7 @@ const (
 	BridgeSigner_GetPublicKey_FullMethodName = "/signer.v1.BridgeSigner/GetPublicKey"
 	BridgeSigner_SignRaw_FullMethodName      = "/signer.v1.BridgeSigner/SignRaw"
 	BridgeSigner_GetAddress_FullMethodName   = "/signer.v1.BridgeSigner/GetAddress"
+	BridgeSigner_SignTx_FullMethodName       = "/signer.v1.BridgeSigner/SignTx"
 )
 
 // BridgeSignerClient is the client API for BridgeSigner service.
@@ -50,6 +51,11 @@ type BridgeSignerClient interface {
 	// using the given prefix (e.g. "tellor"). Allows the reporter to
 	// discover its own address without hard-coding it in config.
 	GetAddress(ctx context.Context, in *GetAddressRequest, opts ...grpc.CallOption) (*GetAddressResponse, error)
+	// SignTx accepts raw Cosmos SignDoc bytes, validates that every message
+	// type_url is on the server's allowlist, then signs with the secp256k1
+	// key. Returns a 64-byte r||s signature (no v byte).
+	// Rejects with PERMISSION_DENIED if any message type is not allowed.
+	SignTx(ctx context.Context, in *SignTxRequest, opts ...grpc.CallOption) (*SignTxResponse, error)
 }
 
 type bridgeSignerClient struct {
@@ -100,6 +106,16 @@ func (c *bridgeSignerClient) GetAddress(ctx context.Context, in *GetAddressReque
 	return out, nil
 }
 
+func (c *bridgeSignerClient) SignTx(ctx context.Context, in *SignTxRequest, opts ...grpc.CallOption) (*SignTxResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SignTxResponse)
+	err := c.cc.Invoke(ctx, BridgeSigner_SignTx_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BridgeSignerServer is the server API for BridgeSigner service.
 // All implementations must embed UnimplementedBridgeSignerServer
 // for forward compatibility.
@@ -125,6 +141,11 @@ type BridgeSignerServer interface {
 	// using the given prefix (e.g. "tellor"). Allows the reporter to
 	// discover its own address without hard-coding it in config.
 	GetAddress(context.Context, *GetAddressRequest) (*GetAddressResponse, error)
+	// SignTx accepts raw Cosmos SignDoc bytes, validates that every message
+	// type_url is on the server's allowlist, then signs with the secp256k1
+	// key. Returns a 64-byte r||s signature (no v byte).
+	// Rejects with PERMISSION_DENIED if any message type is not allowed.
+	SignTx(context.Context, *SignTxRequest) (*SignTxResponse, error)
 	mustEmbedUnimplementedBridgeSignerServer()
 }
 
@@ -146,6 +167,9 @@ func (UnimplementedBridgeSignerServer) SignRaw(context.Context, *SignRawRequest)
 }
 func (UnimplementedBridgeSignerServer) GetAddress(context.Context, *GetAddressRequest) (*GetAddressResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetAddress not implemented")
+}
+func (UnimplementedBridgeSignerServer) SignTx(context.Context, *SignTxRequest) (*SignTxResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SignTx not implemented")
 }
 func (UnimplementedBridgeSignerServer) mustEmbedUnimplementedBridgeSignerServer() {}
 func (UnimplementedBridgeSignerServer) testEmbeddedByValue()                      {}
@@ -240,6 +264,24 @@ func _BridgeSigner_GetAddress_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BridgeSigner_SignTx_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SignTxRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BridgeSignerServer).SignTx(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BridgeSigner_SignTx_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BridgeSignerServer).SignTx(ctx, req.(*SignTxRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BridgeSigner_ServiceDesc is the grpc.ServiceDesc for BridgeSigner service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -262,6 +304,10 @@ var BridgeSigner_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetAddress",
 			Handler:    _BridgeSigner_GetAddress_Handler,
+		},
+		{
+			MethodName: "SignTx",
+			Handler:    _BridgeSigner_SignTx_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

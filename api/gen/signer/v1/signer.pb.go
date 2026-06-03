@@ -402,6 +402,108 @@ func (x *GetAddressResponse) GetAddress() string {
 	return ""
 }
 
+// SignTxRequest carries raw Cosmos SignDoc bytes for scope-checked signing.
+type SignTxRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// sign_doc is the raw protobuf-encoded cosmos.tx.v1beta1.SignDoc bytes
+	// (the exact bytes that will be sha256-hashed and signed).
+	SignDoc []byte `protobuf:"bytes,1,opt,name=sign_doc,json=signDoc,proto3" json:"sign_doc,omitempty"`
+	// request_id is an optional caller-assigned identifier for logs.
+	RequestId     string `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignTxRequest) Reset() {
+	*x = SignTxRequest{}
+	mi := &file_signer_v1_signer_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignTxRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignTxRequest) ProtoMessage() {}
+
+func (x *SignTxRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_signer_v1_signer_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignTxRequest.ProtoReflect.Descriptor instead.
+func (*SignTxRequest) Descriptor() ([]byte, []int) {
+	return file_signer_v1_signer_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *SignTxRequest) GetSignDoc() []byte {
+	if x != nil {
+		return x.SignDoc
+	}
+	return nil
+}
+
+func (x *SignTxRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+// SignTxResponse contains the resulting cosmos-format signature.
+type SignTxResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// signature is the 64-byte secp256k1 ECDSA signature (r || s).
+	Signature     []byte `protobuf:"bytes,1,opt,name=signature,proto3" json:"signature,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignTxResponse) Reset() {
+	*x = SignTxResponse{}
+	mi := &file_signer_v1_signer_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignTxResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignTxResponse) ProtoMessage() {}
+
+func (x *SignTxResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_signer_v1_signer_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignTxResponse.ProtoReflect.Descriptor instead.
+func (*SignTxResponse) Descriptor() ([]byte, []int) {
+	return file_signer_v1_signer_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SignTxResponse) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
 var File_signer_v1_signer_proto protoreflect.FileDescriptor
 
 const file_signer_v1_signer_proto_rawDesc = "" +
@@ -426,13 +528,20 @@ const file_signer_v1_signer_proto_rawDesc = "" +
 	"\x11GetAddressRequest\x12\x16\n" +
 	"\x06prefix\x18\x01 \x01(\tR\x06prefix\".\n" +
 	"\x12GetAddressResponse\x12\x18\n" +
-	"\aaddress\x18\x01 \x01(\tR\aaddress2\xa5\x02\n" +
+	"\aaddress\x18\x01 \x01(\tR\aaddress\"I\n" +
+	"\rSignTxRequest\x12\x19\n" +
+	"\bsign_doc\x18\x01 \x01(\fR\asignDoc\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\".\n" +
+	"\x0eSignTxResponse\x12\x1c\n" +
+	"\tsignature\x18\x01 \x01(\fR\tsignature2\xe4\x02\n" +
 	"\fBridgeSigner\x127\n" +
 	"\x04Sign\x12\x16.signer.v1.SignRequest\x1a\x17.signer.v1.SignResponse\x12O\n" +
 	"\fGetPublicKey\x12\x1e.signer.v1.GetPublicKeyRequest\x1a\x1f.signer.v1.GetPublicKeyResponse\x12@\n" +
 	"\aSignRaw\x12\x19.signer.v1.SignRawRequest\x1a\x1a.signer.v1.SignRawResponse\x12I\n" +
 	"\n" +
-	"GetAddress\x12\x1c.signer.v1.GetAddressRequest\x1a\x1d.signer.v1.GetAddressResponseB?Z=github.com/tellor-io/bridge-signer/api/gen/signer/v1;signerv1b\x06proto3"
+	"GetAddress\x12\x1c.signer.v1.GetAddressRequest\x1a\x1d.signer.v1.GetAddressResponse\x12=\n" +
+	"\x06SignTx\x12\x18.signer.v1.SignTxRequest\x1a\x19.signer.v1.SignTxResponseB?Z=github.com/tellor-io/bridge-signer/api/gen/signer/v1;signerv1b\x06proto3"
 
 var (
 	file_signer_v1_signer_proto_rawDescOnce sync.Once
@@ -446,7 +555,7 @@ func file_signer_v1_signer_proto_rawDescGZIP() []byte {
 	return file_signer_v1_signer_proto_rawDescData
 }
 
-var file_signer_v1_signer_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_signer_v1_signer_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_signer_v1_signer_proto_goTypes = []any{
 	(*SignRequest)(nil),          // 0: signer.v1.SignRequest
 	(*SignResponse)(nil),         // 1: signer.v1.SignResponse
@@ -456,18 +565,22 @@ var file_signer_v1_signer_proto_goTypes = []any{
 	(*SignRawResponse)(nil),      // 5: signer.v1.SignRawResponse
 	(*GetAddressRequest)(nil),    // 6: signer.v1.GetAddressRequest
 	(*GetAddressResponse)(nil),   // 7: signer.v1.GetAddressResponse
+	(*SignTxRequest)(nil),        // 8: signer.v1.SignTxRequest
+	(*SignTxResponse)(nil),       // 9: signer.v1.SignTxResponse
 }
 var file_signer_v1_signer_proto_depIdxs = []int32{
 	0, // 0: signer.v1.BridgeSigner.Sign:input_type -> signer.v1.SignRequest
 	2, // 1: signer.v1.BridgeSigner.GetPublicKey:input_type -> signer.v1.GetPublicKeyRequest
 	4, // 2: signer.v1.BridgeSigner.SignRaw:input_type -> signer.v1.SignRawRequest
 	6, // 3: signer.v1.BridgeSigner.GetAddress:input_type -> signer.v1.GetAddressRequest
-	1, // 4: signer.v1.BridgeSigner.Sign:output_type -> signer.v1.SignResponse
-	3, // 5: signer.v1.BridgeSigner.GetPublicKey:output_type -> signer.v1.GetPublicKeyResponse
-	5, // 6: signer.v1.BridgeSigner.SignRaw:output_type -> signer.v1.SignRawResponse
-	7, // 7: signer.v1.BridgeSigner.GetAddress:output_type -> signer.v1.GetAddressResponse
-	4, // [4:8] is the sub-list for method output_type
-	0, // [0:4] is the sub-list for method input_type
+	8, // 4: signer.v1.BridgeSigner.SignTx:input_type -> signer.v1.SignTxRequest
+	1, // 5: signer.v1.BridgeSigner.Sign:output_type -> signer.v1.SignResponse
+	3, // 6: signer.v1.BridgeSigner.GetPublicKey:output_type -> signer.v1.GetPublicKeyResponse
+	5, // 7: signer.v1.BridgeSigner.SignRaw:output_type -> signer.v1.SignRawResponse
+	7, // 8: signer.v1.BridgeSigner.GetAddress:output_type -> signer.v1.GetAddressResponse
+	9, // 9: signer.v1.BridgeSigner.SignTx:output_type -> signer.v1.SignTxResponse
+	5, // [5:10] is the sub-list for method output_type
+	0, // [0:5] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -484,7 +597,7 @@ func file_signer_v1_signer_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_signer_v1_signer_proto_rawDesc), len(file_signer_v1_signer_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

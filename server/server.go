@@ -2,12 +2,14 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"net"
 	"time"
 
 	cosmossecp "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/types/bech32"
+	costx "github.com/cosmos/cosmos-sdk/types/tx"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -25,11 +27,12 @@ import (
 type Server struct {
 	signerv1.UnimplementedBridgeSignerServer
 
-	signer         signer.Signer
-	logger         *logging.Logger
-	requestTimeout time.Duration
-	listenAddr     string
-	grpcServer     *grpc.Server
+	signer          signer.Signer
+	logger          *logging.Logger
+	requestTimeout  time.Duration
+	listenAddr      string
+	grpcServer      *grpc.Server
+	allowedMsgTypes map[string]struct{} // set derived from Config.AllowedMsgTypes
 }
 
 // Config holds the server configuration.
@@ -38,6 +41,9 @@ type Config struct {
 	RequestTimeout time.Duration
 	MaxRecvMsgSize int
 	Credentials    credentials.TransportCredentials
+	// AllowedMsgTypes is the set of Cosmos message type_urls permitted by SignTx.
+	// If empty, SignTx rejects all requests (safe default).
+	AllowedMsgTypes []string
 }
 
 // New creates a Server with the given signer backend and config.
@@ -52,12 +58,18 @@ func New(s signer.Signer, logger *logging.Logger, cfg Config) *Server {
 		grpc.MaxRecvMsgSize(cfg.MaxRecvMsgSize),
 	)
 
+	allowed := make(map[string]struct{}, len(cfg.AllowedMsgTypes))
+	for _, t := range cfg.AllowedMsgTypes {
+		allowed[t] = struct{}{}
+	}
+
 	srv := &Server{
-		signer:         s,
-		logger:         logger,
-		requestTimeout: cfg.RequestTimeout,
-		listenAddr:     cfg.ListenAddr,
-		grpcServer:     grpcServer,
+		signer:          s,
+		logger:          logger,
+		requestTimeout:  cfg.RequestTimeout,
+		listenAddr:      cfg.ListenAddr,
+		grpcServer:      grpcServer,
+		allowedMsgTypes: allowed,
 	}
 
 	signerv1.RegisterBridgeSignerServer(grpcServer, srv)
@@ -181,6 +193,50 @@ func (s *Server) GetAddress(ctx context.Context, req *signerv1.GetAddressRequest
 	}
 
 	return &signerv1.GetAddressResponse{Address: bech32Addr}, nil
+}
+
+// SignTx implements BridgeSignerServer.
+// Decodes the SignDoc, validates every message type_url against the allowlist,
+// then sha256-hashes the raw bytes and signs with SignRaw.
+func (s *Server) SignTx(ctx context.Context, req *signerv1.SignTxRequest) (*signerv1.SignTxResponse, error) {
+	if len(req.SignDoc) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "sign_doc must not be empty")
+	}
+
+	// Decode the SignDoc to extract body_bytes.
+	var signDoc costx.SignDoc
+	if err := signDoc.Unmarshal(req.SignDoc); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "failed to decode sign_doc: %v", err)
+	}
+
+	// Decode the TxBody to iterate over message type_urls.
+	var body costx.TxBody
+	if err := body.Unmarshal(signDoc.BodyBytes); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "failed to decode tx body: %v", err)
+	}
+
+	// Validate every message type against the allowlist.
+	for _, msg := range body.Messages {
+		typeURL := msg.TypeUrl
+		if _, ok := s.allowedMsgTypes[typeURL]; !ok {
+			s.logger.Error("SignTx rejected: message type not on allowlist",
+				"type_url", typeURL,
+				"request_id", req.RequestId,
+			)
+			return nil, status.Errorf(codes.PermissionDenied,
+				"message type %q is not allowed", typeURL)
+		}
+	}
+
+	// Hash and sign.
+	hash := sha256.Sum256(req.SignDoc)
+	sig, err := s.signer.SignRaw(ctx, hash[:])
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "signing failed: %v", err)
+	}
+
+	s.logger.AuditSign(ctx, req.RequestId, hash[:], nil, 0)
+	return &signerv1.SignTxResponse{Signature: sig}, nil
 }
 
 // enforces a per-request timeout

@@ -88,6 +88,11 @@ type ServerConfig struct {
 
 	// Default: 1MB
 	MaxRecvMsgSize int `yaml:"max_recv_msg_size"`
+
+	// AllowedMsgTypes is the allowlist of Cosmos message type_urls that
+	// SignTx will accept. If empty, SignTx rejects all requests.
+	// Example: ["/layer.oracle.MsgSubmitValue", "/layer.bridge.MsgSubmitBridgeValsetSignatures"]
+	AllowedMsgTypes []string `yaml:"allowed_msg_types"`
 }
 
 // TLSConfig holds paths to the mTLS certificate material.

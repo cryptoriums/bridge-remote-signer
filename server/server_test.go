@@ -15,6 +15,8 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	costx "github.com/cosmos/cosmos-sdk/types/tx"
+	gogoany "github.com/cosmos/gogoproto/types/any"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"google.golang.org/grpc"
@@ -48,8 +50,9 @@ func startTestServer(t *testing.T) (signerv1.BridgeSignerClient, func()) {
 	}
 
 	srv := server.New(s, log, server.Config{
-		ListenAddr:     "127.0.0.1:0",
-		MaxRecvMsgSize: 4 * 1024 * 1024, // 4 MiB — same as gRPC default
+		ListenAddr:      "127.0.0.1:0",
+		MaxRecvMsgSize:  4 * 1024 * 1024,
+		AllowedMsgTypes: []string{"/layer.oracle.MsgSubmitValue"},
 	})
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -185,4 +188,92 @@ func writeKeyringWithKey(t *testing.T, privKeyHex, keyName string) (string, stri
 		t.Fatalf("import priv key: %v", err)
 	}
 	return dir, pwFile
+}
+
+// buildSignDoc creates a minimal cosmos SignDoc containing a single message with the given type_url.
+func buildSignDoc(t *testing.T, typeURL string) []byte {
+	t.Helper()
+	// Encode a TxBody with one Any message of the given type_url.
+	body := costx.TxBody{
+		Messages: []*gogoany.Any{{TypeUrl: typeURL}},
+	}
+	bodyBytes, err := body.Marshal()
+	if err != nil {
+		t.Fatalf("marshal TxBody: %v", err)
+	}
+	doc := costx.SignDoc{
+		BodyBytes:     bodyBytes,
+		AuthInfoBytes: []byte{},
+		ChainId:       "layertest-1",
+		AccountNumber: 1,
+	}
+	raw, err := doc.Marshal()
+	if err != nil {
+		t.Fatalf("marshal SignDoc: %v", err)
+	}
+	return raw
+}
+
+func TestServer_SignTx_AllowedMsg(t *testing.T) {
+	client, cleanup := startTestServer(t)
+	defer cleanup()
+
+	signDoc := buildSignDoc(t, "/layer.oracle.MsgSubmitValue")
+	resp, err := client.SignTx(context.Background(), &signerv1.SignTxRequest{
+		SignDoc:   signDoc,
+		RequestId: "test-signtx-1",
+	})
+	if err != nil {
+		t.Fatalf("SignTx: %v", err)
+	}
+	if len(resp.Signature) != 64 {
+		t.Fatalf("expected 64-byte signature, got %d", len(resp.Signature))
+	}
+
+	// Verify the signature covers sha256(signDoc).
+	hash := sha256.Sum256(signDoc)
+	recovered := false
+	for _, v := range []byte{0, 1} {
+		candidate := append(resp.Signature, v)
+		pub, recErr := crypto.Ecrecover(hash[:], candidate)
+		if recErr != nil {
+			continue
+		}
+		x := new(big.Int).SetBytes(pub[1:33])
+		y := new(big.Int).SetBytes(pub[33:65])
+		key := ecdsa.PublicKey{Curve: secp256k1.S256(), X: x, Y: y}
+		expectedPubKey, _ := hex.DecodeString(testPubKeyHex)
+		if bytes.Equal(crypto.CompressPubkey(&key), expectedPubKey) {
+			recovered = true
+			break
+		}
+	}
+	if !recovered {
+		t.Error("SignTx: signature did not recover to expected public key")
+	}
+}
+
+func TestServer_SignTx_BlockedMsg(t *testing.T) {
+	client, cleanup := startTestServer(t)
+	defer cleanup()
+
+	// MsgUndelegate is NOT on the allowlist — must be rejected.
+	signDoc := buildSignDoc(t, "/cosmos.staking.v1beta1.MsgUndelegate")
+	_, err := client.SignTx(context.Background(), &signerv1.SignTxRequest{
+		SignDoc:   signDoc,
+		RequestId: "test-blocked",
+	})
+	if err == nil {
+		t.Fatal("expected PermissionDenied error for blocked msg type, got nil")
+	}
+}
+
+func TestServer_SignTx_EmptySignDoc(t *testing.T) {
+	client, cleanup := startTestServer(t)
+	defer cleanup()
+
+	_, err := client.SignTx(context.Background(), &signerv1.SignTxRequest{SignDoc: nil})
+	if err == nil {
+		t.Fatal("expected error for empty sign_doc, got nil")
+	}
 }

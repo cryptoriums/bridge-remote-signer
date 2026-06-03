@@ -163,10 +163,11 @@ func runDaemon(configPath string) error {
 
 	// Build and register the gRPC server.
 	srv := server.New(s, logger, server.Config{
-		ListenAddr:     cfg.Server.ListenAddr,
-		RequestTimeout: cfg.Server.RequestTimeout,
-		MaxRecvMsgSize: cfg.Server.MaxRecvMsgSize,
-		Credentials:    creds,
+		ListenAddr:      cfg.Server.ListenAddr,
+		RequestTimeout:  cfg.Server.RequestTimeout,
+		MaxRecvMsgSize:  cfg.Server.MaxRecvMsgSize,
+		Credentials:     creds,
+		AllowedMsgTypes: cfg.Server.AllowedMsgTypes,
 	})
 	healthChecker := health.New(s, logger, cfg.Server.HealthAddr)
 

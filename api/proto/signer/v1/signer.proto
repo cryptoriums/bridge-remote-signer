@@ -28,6 +28,12 @@ service BridgeSigner {
   // using the given prefix (e.g. "tellor"). Allows the reporter to
   // discover its own address without hard-coding it in config.
   rpc GetAddress(GetAddressRequest) returns (GetAddressResponse);
+
+  // SignTx accepts raw Cosmos SignDoc bytes, validates that every message
+  // type_url is on the server's allowlist, then signs with the secp256k1
+  // key. Returns a 64-byte r||s signature (no v byte).
+  // Rejects with PERMISSION_DENIED if any message type is not allowed.
+  rpc SignTx(SignTxRequest) returns (SignTxResponse);
 }
 
 // SignRequest is the signing request sent by the validator.
@@ -82,4 +88,20 @@ message GetAddressRequest {
 message GetAddressResponse {
   // address is the bech32-encoded account address (e.g. "tellor1...").
   string address = 1;
+}
+
+// SignTxRequest carries raw Cosmos SignDoc bytes for scope-checked signing.
+message SignTxRequest {
+  // sign_doc is the raw protobuf-encoded cosmos.tx.v1beta1.SignDoc bytes
+  // (the exact bytes that will be sha256-hashed and signed).
+  bytes sign_doc = 1;
+
+  // request_id is an optional caller-assigned identifier for logs.
+  string request_id = 2;
+}
+
+// SignTxResponse contains the resulting cosmos-format signature.
+message SignTxResponse {
+  // signature is the 64-byte secp256k1 ECDSA signature (r || s).
+  bytes signature = 1;
 }
