@@ -20,7 +20,9 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	signerv1 "github.com/tellor-io/bridge-remote-signer/api/gen/signer/v1"
 	"github.com/tellor-io/bridge-remote-signer/logging"
@@ -131,8 +133,8 @@ func TestServer_SignRaw_InvalidLength(t *testing.T) {
 	_, err := client.SignRaw(context.Background(), &signerv1.SignRawRequest{
 		Msg: []byte("not 32 bytes"),
 	})
-	if err == nil {
-		t.Fatal("expected error for wrong-length input, got nil")
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument, got %v (err=%v)", status.Code(err), err)
 	}
 }
 
@@ -160,8 +162,8 @@ func TestServer_GetAddress_EmptyPrefix(t *testing.T) {
 	defer cleanup()
 
 	_, err := client.GetAddress(context.Background(), &signerv1.GetAddressRequest{Prefix: ""})
-	if err == nil {
-		t.Fatal("expected error for empty prefix, got nil")
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument, got %v (err=%v)", status.Code(err), err)
 	}
 }
 
@@ -263,8 +265,8 @@ func TestServer_SignTx_BlockedMsg(t *testing.T) {
 		SignDoc:   signDoc,
 		RequestId: "test-blocked",
 	})
-	if err == nil {
-		t.Fatal("expected PermissionDenied error for blocked msg type, got nil")
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("expected PermissionDenied, got %v (err=%v)", status.Code(err), err)
 	}
 }
 
@@ -273,7 +275,7 @@ func TestServer_SignTx_EmptySignDoc(t *testing.T) {
 	defer cleanup()
 
 	_, err := client.SignTx(context.Background(), &signerv1.SignTxRequest{SignDoc: nil})
-	if err == nil {
-		t.Fatal("expected error for empty sign_doc, got nil")
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument, got %v (err=%v)", status.Code(err), err)
 	}
 }
