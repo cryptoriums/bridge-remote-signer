@@ -168,6 +168,7 @@ func runDaemon(configPath string) error {
 		MaxRecvMsgSize:  cfg.Server.MaxRecvMsgSize,
 		Credentials:     creds,
 		AllowedMsgTypes: cfg.Server.AllowedMsgTypes,
+		ChainID:         cfg.Consensus.ChainID,
 	})
 	healthChecker := health.New(s, logger, cfg.Server.HealthAddr)
 

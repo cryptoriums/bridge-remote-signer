@@ -34,6 +34,10 @@ service BridgeSigner {
   // key. Returns a 64-byte r||s signature (no v byte).
   // Rejects with PERMISSION_DENIED if any message type is not allowed.
   rpc SignTx(SignTxRequest) returns (SignTxResponse);
+
+  // GetChainID returns the cosmos chain ID the signer is configured for,
+  // so callers (e.g. the monitor) can discover it without a local env var.
+  rpc GetChainID(GetChainIDRequest) returns (GetChainIDResponse);
 }
 
 // SignRequest is the signing request sent by the validator.
@@ -104,4 +108,13 @@ message SignTxRequest {
 message SignTxResponse {
   // signature is the 64-byte secp256k1 ECDSA signature (r || s).
   bytes signature = 1;
+}
+
+// GetChainIDRequest
+message GetChainIDRequest {}
+
+// GetChainIDResponse contains the configured chain ID.
+message GetChainIDResponse {
+  // chain_id is the cosmos chain ID (e.g. "layertest-5").
+  string chain_id = 1;
 }

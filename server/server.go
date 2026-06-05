@@ -33,6 +33,7 @@ type Server struct {
 	listenAddr      string
 	grpcServer      *grpc.Server
 	allowedMsgTypes map[string]struct{} // set derived from Config.AllowedMsgTypes
+	chainID         string
 }
 
 // Config holds the server configuration.
@@ -44,6 +45,8 @@ type Config struct {
 	// AllowedMsgTypes is the set of Cosmos message type_urls permitted by SignTx.
 	// If empty, SignTx rejects all requests (safe default).
 	AllowedMsgTypes []string
+	// ChainID is the cosmos chain ID, returned by GetChainID.
+	ChainID string
 }
 
 // New creates a Server with the given signer backend and config.
@@ -70,6 +73,7 @@ func New(s signer.Signer, logger *logging.Logger, cfg Config) *Server {
 		listenAddr:      cfg.ListenAddr,
 		grpcServer:      grpcServer,
 		allowedMsgTypes: allowed,
+		chainID:         cfg.ChainID,
 	}
 
 	signerv1.RegisterBridgeSignerServer(grpcServer, srv)
@@ -193,6 +197,15 @@ func (s *Server) GetAddress(ctx context.Context, req *signerv1.GetAddressRequest
 	}
 
 	return &signerv1.GetAddressResponse{Address: bech32Addr}, nil
+}
+
+// GetChainID implements BridgeSignerServer. Returns the configured cosmos chain ID
+// so callers (e.g. the monitor) can discover it without a local env var.
+func (s *Server) GetChainID(_ context.Context, _ *signerv1.GetChainIDRequest) (*signerv1.GetChainIDResponse, error) {
+	if s.chainID == "" {
+		return nil, status.Errorf(codes.FailedPrecondition, "chain ID is not configured on the signer")
+	}
+	return &signerv1.GetChainIDResponse{ChainId: s.chainID}, nil
 }
 
 // SignTx implements BridgeSignerServer.
