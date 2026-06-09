@@ -9,13 +9,6 @@ import (
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 )
 
-// These tests extend the double-sign coverage with additional equivocation
-// scenarios beyond the existing same-height/different-hash prevote case.
-// Double-signing carries the harshest slashing penalty (~50% of stake), so the
-// signer must refuse to produce two conflicting signatures for the same
-// height/round/step under every scenario below.
-
-// hash32 returns a deterministic 32-byte hash seeded by b.
 func hash32(b byte) []byte {
 	h := make([]byte, 32)
 	for i := range h {
@@ -29,9 +22,6 @@ func blockIDOf(b byte) cmtproto.BlockID {
 	return cmtproto.BlockID{Hash: h, PartSetHeader: cmtproto.PartSetHeader{Total: 1, Hash: h}}
 }
 
-// newFilePVAtPath builds a FilePV whose key+state live at a STABLE path (not a
-// fresh TempDir each call), so a second FilePV can reload the same state file —
-// needed to simulate a signer restart.
 func newFilePVAtPath(t *testing.T, dir string) *privval.FilePV {
 	t.Helper()
 	keyFile := filepath.Join(dir, "key.json")
@@ -41,7 +31,6 @@ func newFilePVAtPath(t *testing.T, dir string) *privval.FilePV {
 	return pv
 }
 
-// reloadFilePV loads an existing FilePV from the same key+state files (restart).
 func reloadFilePV(t *testing.T, dir string) *privval.FilePV {
 	t.Helper()
 	keyFile := filepath.Join(dir, "key.json")
@@ -60,9 +49,6 @@ func voteOf(typ cmtproto.SignedMsgType, height int64, round int32, addr []byte, 
 	}
 }
 
-//  1. PRECOMMIT double-sign: signing two different blocks as precommit at the
-//     same height/round must be rejected. (Existing tests cover prevote; precommit
-//     is the more dangerous, directly-slashable equivocation.)
 func TestDoubleSign_PrecommitConflictRejected(t *testing.T) {
 	lpv := NewLockedPrivValidator(newFilePVAtPath(t, t.TempDir()))
 	addr := mustAddr(t, lpv)
@@ -75,10 +61,6 @@ func TestDoubleSign_PrecommitConflictRejected(t *testing.T) {
 		t.Fatal("DOUBLE SIGN: second conflicting precommit at same H/R was signed")
 	}
 }
-
-//  2. NIL vs non-NIL at the same height/round: after precommitting a real block,
-//     a precommit for nil (empty BlockID) at the same H/R is a conflicting vote
-//     and must be rejected — and vice versa.
 func TestDoubleSign_NilThenBlockRejected(t *testing.T) {
 	lpv := NewLockedPrivValidator(newFilePVAtPath(t, t.TempDir()))
 	addr := mustAddr(t, lpv)
@@ -93,9 +75,6 @@ func TestDoubleSign_NilThenBlockRejected(t *testing.T) {
 		t.Fatal("DOUBLE SIGN: nil precommit accepted after block precommit at same H/R")
 	}
 }
-
-//  3. HRS must not go backwards: after signing at a higher round, signing a vote
-//     at a LOWER round for the same height must be rejected (stale/replayed).
 func TestDoubleSign_LowerRoundAfterHigherRejected(t *testing.T) {
 	lpv := NewLockedPrivValidator(newFilePVAtPath(t, t.TempDir()))
 	addr := mustAddr(t, lpv)
@@ -108,11 +87,6 @@ func TestDoubleSign_LowerRoundAfterHigherRejected(t *testing.T) {
 		t.Fatal("HRS regression: vote at lower round accepted after higher round")
 	}
 }
-
-//  4. RESTART must not enable a double-sign: sign at height H, drop the in-memory
-//     FilePV, reload from the SAME state file (simulating a signer/container
-//     restart), then attempt to sign a conflicting block at H. The persisted
-//     state must still reject it. This is the critical real-world scenario.
 func TestDoubleSign_SurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
 
@@ -134,10 +108,6 @@ func TestDoubleSign_SurvivesRestart(t *testing.T) {
 		t.Fatal("DOUBLE SIGN ACROSS RESTART: reloaded signer signed a conflicting block at the same height")
 	}
 }
-
-//  5. Proposal vs proposal conflict at same H/R must be rejected (round-leader
-//     equivocation). Existing TestSignProposal_DoubleSignRejected covers a case;
-//     this asserts it independently with the locked PV directly.
 func TestDoubleSign_ProposalConflictRejected(t *testing.T) {
 	lpv := NewLockedPrivValidator(newFilePVAtPath(t, t.TempDir()))
 
@@ -152,10 +122,6 @@ func TestDoubleSign_ProposalConflictRejected(t *testing.T) {
 	}
 }
 
-//  6. Cross-chain safety: the same H/R/block signed once must not be re-signed
-//     under a DIFFERENT chain ID without the state guard catching the HRS reuse.
-//     (Idempotent identical re-sign on the SAME chain is allowed; a different
-//     chain id at the same HRS with a different block is a conflict.)
 func TestDoubleSign_DifferentChainSameHRSConflict(t *testing.T) {
 	lpv := NewLockedPrivValidator(newFilePVAtPath(t, t.TempDir()))
 	addr := mustAddr(t, lpv)
