@@ -18,7 +18,9 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	signerv1 "github.com/tellor-io/bridge-remote-signer/api/gen/signer/v1"
 	"github.com/tellor-io/bridge-remote-signer/logging"
@@ -29,15 +31,22 @@ import (
 const (
 	testPrivKeyHex = "8cab1593c6570db70a5f41483bd9db18498e4cde26ae1d862f06208ff8ca9475"
 	testPubKeyHex  = "037545ddc4f44ede3e04636ac7523a7a27017ce1f7e70811fb5208d668b3b652d5"
+	testChainID    = "tellor-test-1"
 )
 
 // startTestServer creates an in-memory gRPC server using the file signer backed by a
 // temp keyring and returns a connected client along with a cleanup function.
 func startTestServer(t *testing.T) (signerv1.BridgeSignerClient, func()) {
+	return startTestServerChainID(t, testChainID)
+}
+
+// startTestServerChainID is startTestServer with an explicit chain ID so that
+// GetChainID behaviour (configured vs. not) can be exercised.
+func startTestServerChainID(t *testing.T, chainID string) (signerv1.BridgeSignerClient, func()) {
 	t.Helper()
 
 	keyringDir, pwFile := writeKeyringWithKey(t, testPrivKeyHex, "test-key")
-	s, err := signer.NewFileSigner(keyringDir, "test-key", pwFile, "")
+	s, err := signer.NewFileSigner(keyringDir, "test-key", pwFile)
 	if err != nil {
 		t.Fatalf("NewFileSigner: %v", err)
 	}
@@ -50,6 +59,7 @@ func startTestServer(t *testing.T) (signerv1.BridgeSignerClient, func()) {
 	srv := server.New(s, log, server.Config{
 		ListenAddr:     "127.0.0.1:0",
 		MaxRecvMsgSize: 4 * 1024 * 1024, // 4 MiB — same as gRPC default
+		ChainID:        chainID,
 	})
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -159,6 +169,31 @@ func TestServer_GetAddress_EmptyPrefix(t *testing.T) {
 	_, err := client.GetAddress(context.Background(), &signerv1.GetAddressRequest{Prefix: ""})
 	if err == nil {
 		t.Fatal("expected error for empty prefix, got nil")
+	}
+}
+
+func TestServer_GetChainID(t *testing.T) {
+	client, cleanup := startTestServer(t)
+	defer cleanup()
+
+	resp, err := client.GetChainID(context.Background(), &signerv1.GetChainIDRequest{})
+	if err != nil {
+		t.Fatalf("GetChainID: %v", err)
+	}
+	if resp.ChainId != testChainID {
+		t.Fatalf("ChainId = %q, want %q", resp.ChainId, testChainID)
+	}
+}
+
+func TestServer_GetChainID_NotConfigured(t *testing.T) {
+	// When no chain ID is configured, GetChainID must fail loudly with
+	// FailedPrecondition rather than return an empty string.
+	client, cleanup := startTestServerChainID(t, "")
+	defer cleanup()
+
+	_, err := client.GetChainID(context.Background(), &signerv1.GetChainIDRequest{})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("expected FailedPrecondition, got %v", err)
 	}
 }
 

@@ -136,11 +136,11 @@ func runDaemon(configPath string) error {
 			consensusWg.Add(1)
 			go func(t string) {
 				defer consensusWg.Done()
-				consensus.RunDialClient(ctx, t, cfg.Consensus.ChainID, connKey, locked, handler, cometLogger)
+				consensus.RunDialClient(ctx, t, cfg.ChainID, connKey, locked, handler, cometLogger)
 			}(target)
 		}
 		logger.Info("consensus signer started",
-			"chain_id", cfg.Consensus.ChainID,
+			"chain_id", cfg.ChainID,
 			"targets", cfg.Consensus.Targets,
 		)
 	}
@@ -167,7 +167,7 @@ func runDaemon(configPath string) error {
 		RequestTimeout: cfg.Server.RequestTimeout,
 		MaxRecvMsgSize: cfg.Server.MaxRecvMsgSize,
 		Credentials:    creds,
-		ChainID:        cfg.Consensus.ChainID,
+		ChainID:        cfg.ChainID,
 	})
 	healthChecker := health.New(s, logger, cfg.Server.HealthAddr)
 
