@@ -238,6 +238,10 @@ func (s *Server) GetAddress(ctx context.Context, req *signerv1.GetAddressRequest
 		return nil, status.Errorf(codes.Internal, "failed to get public key: %v", err)
 	}
 
+	if len(pubKeyBytes) != 33 {
+		return nil, status.Errorf(codes.Internal, "invalid public key length %d, expected 33", len(pubKeyBytes))
+	}
+
 	// Use the Cosmos SDK secp256k1 PubKey type to derive the address via
 	// sha256 + ripemd160 of the compressed public key — the standard Cosmos derivation.
 	pubKey := &cosmossecp.PubKey{Key: pubKeyBytes}

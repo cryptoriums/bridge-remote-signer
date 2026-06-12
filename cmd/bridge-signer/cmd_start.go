@@ -136,11 +136,11 @@ func runDaemon(configPath string) error {
 			consensusWg.Add(1)
 			go func(t string) {
 				defer consensusWg.Done()
-				consensus.RunDialClient(ctx, t, cfg.Consensus.ChainID, connKey, locked, handler, cometLogger)
+				consensus.RunDialClient(ctx, t, cfg.ChainID, connKey, locked, handler, cometLogger)
 			}(target)
 		}
 		logger.Info("consensus signer started",
-			"chain_id", cfg.Consensus.ChainID,
+			"chain_id", cfg.ChainID,
 			"targets", cfg.Consensus.Targets,
 		)
 	}
@@ -177,7 +177,7 @@ func runDaemon(configPath string) error {
 		MaxRecvMsgSize:           cfg.Server.MaxRecvMsgSize,
 		Credentials:              creds,
 		AllowedMsgTypes:          cfg.Server.AllowedMsgTypes,
-		ChainID:                  cfg.Consensus.ChainID,
+		ChainID:                  cfg.ChainID,
 		CheckpointGuardStatePath: cfg.CheckpointGuardStatePath(),
 		EnabledRPCs:              enabledRPCs,
 		EnableReflection:         cfg.Server.EnableReflection,
@@ -217,6 +217,7 @@ func runDaemon(configPath string) error {
 	}
 
 	ctxCancel()        // stop consensus dial goroutines
+
 	consensusWg.Wait() // wait for all consensus goroutines to exit before shutting down gRPC
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)

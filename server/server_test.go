@@ -415,3 +415,82 @@ func TestServer_SignOracleAttestation_OverWire(t *testing.T) {
 		t.Fatalf("signature mismatch vs golden:\n got  %s\n want %s", got, goldenAttestationSig64Hex)
 	}
 }
+
+// startTestServerChainID starts a hardened test server configured with a chain
+// ID, so GetChainID returns it. Mirrors startTestServerAllow (mTLS PKI).
+func startTestServerChainID(t *testing.T, chainID string) (signerv1.BridgeSignerClient, func()) {
+	t.Helper()
+
+	keyringDir, pwFile := writeKeyringWithKey(t, goldenPrivKeyHex, "test-key")
+	s, err := signer.NewFileSigner(keyringDir, "test-key", pwFile, "")
+	if err != nil {
+		t.Fatalf("NewFileSigner: %v", err)
+	}
+
+	log, err := logging.New("error", "json")
+	if err != nil {
+		t.Fatalf("logging.New: %v", err)
+	}
+
+	pki := newTestPKI(t)
+	srv, err := server.New(s, log, server.Config{
+		ListenAddr:     "127.0.0.1:0",
+		MaxRecvMsgSize: 4 * 1024 * 1024,
+		ChainID:        chainID,
+		Credentials:    pki.serverCreds(),
+	})
+	if err != nil {
+		t.Fatalf("server.New: %v", err)
+	}
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+
+	go func() {
+		if err := srv.ServeOn(lis); err != nil {
+			// Ignore server closed errors during test cleanup.
+			_ = err
+		}
+	}()
+
+	conn, err := grpc.NewClient(lis.Addr().String(),
+		grpc.WithTransportCredentials(pki.clientCreds("test-client")))
+	if err != nil {
+		t.Fatalf("grpc.NewClient: %v", err)
+	}
+
+	client := signerv1.NewBridgeSignerClient(conn)
+	cleanup := func() {
+		conn.Close()
+		srv.Stop()
+	}
+	return client, cleanup
+}
+
+// TestServer_GetChainID verifies the signer reports its configured chain ID.
+func TestServer_GetChainID(t *testing.T) {
+	client, cleanup := startTestServerChainID(t, "layertest-5")
+	defer cleanup()
+
+	resp, err := client.GetChainID(context.Background(), &signerv1.GetChainIDRequest{})
+	if err != nil {
+		t.Fatalf("GetChainID: %v", err)
+	}
+	if resp.ChainId != "layertest-5" {
+		t.Errorf("expected chain id 'layertest-5', got %q", resp.ChainId)
+	}
+}
+
+// TestServer_GetChainID_NotConfigured verifies GetChainID returns
+// FailedPrecondition when no chain ID is configured on the signer.
+func TestServer_GetChainID_NotConfigured(t *testing.T) {
+	client, cleanup := startTestServer(t) // no chain id configured
+	defer cleanup()
+
+	_, err := client.GetChainID(context.Background(), &signerv1.GetChainIDRequest{})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("expected FailedPrecondition when chain id not configured, got %v", err)
+	}
+}
