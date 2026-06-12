@@ -19,12 +19,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	BridgeSigner_Sign_FullMethodName         = "/signer.v1.BridgeSigner/Sign"
-	BridgeSigner_GetPublicKey_FullMethodName = "/signer.v1.BridgeSigner/GetPublicKey"
-	BridgeSigner_SignRaw_FullMethodName      = "/signer.v1.BridgeSigner/SignRaw"
-	BridgeSigner_GetAddress_FullMethodName   = "/signer.v1.BridgeSigner/GetAddress"
-	BridgeSigner_SignTx_FullMethodName       = "/signer.v1.BridgeSigner/SignTx"
-	BridgeSigner_GetChainID_FullMethodName   = "/signer.v1.BridgeSigner/GetChainID"
+	BridgeSigner_Sign_FullMethodName                  = "/signer.v1.BridgeSigner/Sign"
+	BridgeSigner_GetPublicKey_FullMethodName          = "/signer.v1.BridgeSigner/GetPublicKey"
+	BridgeSigner_SignRaw_FullMethodName               = "/signer.v1.BridgeSigner/SignRaw"
+	BridgeSigner_GetAddress_FullMethodName            = "/signer.v1.BridgeSigner/GetAddress"
+	BridgeSigner_SignTx_FullMethodName                = "/signer.v1.BridgeSigner/SignTx"
+	BridgeSigner_GetChainID_FullMethodName            = "/signer.v1.BridgeSigner/GetChainID"
+	BridgeSigner_SignBridgeCheckpoint_FullMethodName  = "/signer.v1.BridgeSigner/SignBridgeCheckpoint"
+	BridgeSigner_SignOracleAttestation_FullMethodName = "/signer.v1.BridgeSigner/SignOracleAttestation"
 )
 
 // BridgeSignerClient is the client API for BridgeSigner service.
@@ -60,6 +62,22 @@ type BridgeSignerClient interface {
 	// GetChainID returns the cosmos chain ID the signer is configured for,
 	// so callers (e.g. the monitor) can discover it without a local env var.
 	GetChainID(ctx context.Context, in *GetChainIDRequest, opts ...grpc.CallOption) (*GetChainIDResponse, error)
+	// SignBridgeCheckpoint accepts the STRUCTURED valset-checkpoint inputs
+	// (not a blind hash), recomputes the checkpoint itself using the byte-exact
+	// node encoder, validates it against the caller-supplied expected_checkpoint,
+	// enforces self-membership + a monotonic replay guard, then signs
+	// sha256(checkpoint) with the secp256k1 key. Returns a 64-byte r||s signature
+	// (no v byte) — the chain consumer brute-forces the recovery id itself.
+	// FAILS CLOSED (signs nothing) on any mismatch.
+	SignBridgeCheckpoint(ctx context.Context, in *SignBridgeCheckpointRequest, opts ...grpc.CallOption) (*SignBridgeCheckpointResponse, error)
+	// SignOracleAttestation accepts the STRUCTURED oracle-attestation inputs (not a
+	// blind hash), recomputes the attestation snapshot itself using the byte-exact
+	// node encoder (EncodeOracleAttestationData), validates it against the
+	// caller-supplied expected_snapshot, then signs sha256(snapshot) with the
+	// secp256k1 key. Returns a 64-byte r||s signature (no v byte) — the chain
+	// consumer brute-forces the recovery id itself. FAILS CLOSED (signs nothing)
+	// on any mismatch.
+	SignOracleAttestation(ctx context.Context, in *SignOracleAttestationRequest, opts ...grpc.CallOption) (*SignOracleAttestationResponse, error)
 }
 
 type bridgeSignerClient struct {
@@ -130,6 +148,26 @@ func (c *bridgeSignerClient) GetChainID(ctx context.Context, in *GetChainIDReque
 	return out, nil
 }
 
+func (c *bridgeSignerClient) SignBridgeCheckpoint(ctx context.Context, in *SignBridgeCheckpointRequest, opts ...grpc.CallOption) (*SignBridgeCheckpointResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SignBridgeCheckpointResponse)
+	err := c.cc.Invoke(ctx, BridgeSigner_SignBridgeCheckpoint_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bridgeSignerClient) SignOracleAttestation(ctx context.Context, in *SignOracleAttestationRequest, opts ...grpc.CallOption) (*SignOracleAttestationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SignOracleAttestationResponse)
+	err := c.cc.Invoke(ctx, BridgeSigner_SignOracleAttestation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BridgeSignerServer is the server API for BridgeSigner service.
 // All implementations must embed UnimplementedBridgeSignerServer
 // for forward compatibility.
@@ -163,6 +201,22 @@ type BridgeSignerServer interface {
 	// GetChainID returns the cosmos chain ID the signer is configured for,
 	// so callers (e.g. the monitor) can discover it without a local env var.
 	GetChainID(context.Context, *GetChainIDRequest) (*GetChainIDResponse, error)
+	// SignBridgeCheckpoint accepts the STRUCTURED valset-checkpoint inputs
+	// (not a blind hash), recomputes the checkpoint itself using the byte-exact
+	// node encoder, validates it against the caller-supplied expected_checkpoint,
+	// enforces self-membership + a monotonic replay guard, then signs
+	// sha256(checkpoint) with the secp256k1 key. Returns a 64-byte r||s signature
+	// (no v byte) — the chain consumer brute-forces the recovery id itself.
+	// FAILS CLOSED (signs nothing) on any mismatch.
+	SignBridgeCheckpoint(context.Context, *SignBridgeCheckpointRequest) (*SignBridgeCheckpointResponse, error)
+	// SignOracleAttestation accepts the STRUCTURED oracle-attestation inputs (not a
+	// blind hash), recomputes the attestation snapshot itself using the byte-exact
+	// node encoder (EncodeOracleAttestationData), validates it against the
+	// caller-supplied expected_snapshot, then signs sha256(snapshot) with the
+	// secp256k1 key. Returns a 64-byte r||s signature (no v byte) — the chain
+	// consumer brute-forces the recovery id itself. FAILS CLOSED (signs nothing)
+	// on any mismatch.
+	SignOracleAttestation(context.Context, *SignOracleAttestationRequest) (*SignOracleAttestationResponse, error)
 	mustEmbedUnimplementedBridgeSignerServer()
 }
 
@@ -190,6 +244,12 @@ func (UnimplementedBridgeSignerServer) SignTx(context.Context, *SignTxRequest) (
 }
 func (UnimplementedBridgeSignerServer) GetChainID(context.Context, *GetChainIDRequest) (*GetChainIDResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetChainID not implemented")
+}
+func (UnimplementedBridgeSignerServer) SignBridgeCheckpoint(context.Context, *SignBridgeCheckpointRequest) (*SignBridgeCheckpointResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SignBridgeCheckpoint not implemented")
+}
+func (UnimplementedBridgeSignerServer) SignOracleAttestation(context.Context, *SignOracleAttestationRequest) (*SignOracleAttestationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SignOracleAttestation not implemented")
 }
 func (UnimplementedBridgeSignerServer) mustEmbedUnimplementedBridgeSignerServer() {}
 func (UnimplementedBridgeSignerServer) testEmbeddedByValue()                      {}
@@ -320,6 +380,42 @@ func _BridgeSigner_GetChainID_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BridgeSigner_SignBridgeCheckpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SignBridgeCheckpointRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BridgeSignerServer).SignBridgeCheckpoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BridgeSigner_SignBridgeCheckpoint_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BridgeSignerServer).SignBridgeCheckpoint(ctx, req.(*SignBridgeCheckpointRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BridgeSigner_SignOracleAttestation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SignOracleAttestationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BridgeSignerServer).SignOracleAttestation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BridgeSigner_SignOracleAttestation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BridgeSignerServer).SignOracleAttestation(ctx, req.(*SignOracleAttestationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BridgeSigner_ServiceDesc is the grpc.ServiceDesc for BridgeSigner service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -350,6 +446,14 @@ var BridgeSigner_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetChainID",
 			Handler:    _BridgeSigner_GetChainID_Handler,
+		},
+		{
+			MethodName: "SignBridgeCheckpoint",
+			Handler:    _BridgeSigner_SignBridgeCheckpoint_Handler,
+		},
+		{
+			MethodName: "SignOracleAttestation",
+			Handler:    _BridgeSigner_SignOracleAttestation_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
