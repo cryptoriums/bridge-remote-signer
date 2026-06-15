@@ -2,6 +2,11 @@
 # Copy to config.yaml and fill in your values.
 # Never commit config.yaml.
 
+# chain_id: the cosmos chain ID. Top-level (NOT under consensus) so it can be
+# served via GetChainID even when consensus signing is off. Required when
+# consensus.key_file is set.
+chain_id: layertest-5
+
 signer:
   # backend selects the signing backend: "file" or "fortanixdsm".
   backend: file
@@ -67,7 +72,6 @@ logging:
   format: json
 
 consensus:
-  chain_id: layertest-5
   key_file: /keys/priv_validator_key.json
   state_file: /data/priv_validator_state.json
   conn_key_file: /data/connection.key
