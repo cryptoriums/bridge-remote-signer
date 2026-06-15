@@ -37,17 +37,17 @@ const (
 	goldenPrivKeyHex = "1111111111111111111111111111111111111111111111111111111111111111"
 
 	// --- SignOracleAttestation golden vector (from the real node encoder) ---
-	goldenAttestationQueryIDHex      = "83245f6a6a2f6458558a706270fbcc35ac3a81917602c1313d3bfa998dcc2d4b"
-	goldenAttestationValueHex        = "0000000000000000000000000000000000000000000000000de0b6b3a7640000"
-	goldenAttestationCheckpointHex   = "5c3d8e1f0a9b7c6d4e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d"
-	goldenAttestationSnapshotHex     = "800969391dde8f3dfb8b76d4d5637b51f5b23ebb26721fc933a7b5cb6fd82124"
-	goldenAttestationSig64Hex        = "65b243409f43168a75a5c3184dcd09f5a8f7becbefbe9f5d4f24dc32d3e6feb41f49088031676890cc6badae9d0f00275955049fc13136db00b639eec7a1da9c"
-	goldenAttTimestamp        uint64 = 1700000000000
-	goldenAttAggregatePower   uint64 = 175
-	goldenAttPreviousTime     uint64 = 1699999000000
-	goldenAttNextTime         uint64 = 1700001000000
-	goldenAttAttestationTime  uint64 = 1700000500000
-	goldenAttLastConsensus    uint64 = 1699998000000
+	goldenAttestationQueryIDHex           = "83245f6a6a2f6458558a706270fbcc35ac3a81917602c1313d3bfa998dcc2d4b"
+	goldenAttestationValueHex             = "0000000000000000000000000000000000000000000000000de0b6b3a7640000"
+	goldenAttestationCheckpointHex        = "5c3d8e1f0a9b7c6d4e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d"
+	goldenAttestationSnapshotHex          = "800969391dde8f3dfb8b76d4d5637b51f5b23ebb26721fc933a7b5cb6fd82124"
+	goldenAttestationSig64Hex             = "65b243409f43168a75a5c3184dcd09f5a8f7becbefbe9f5d4f24dc32d3e6feb41f49088031676890cc6badae9d0f00275955049fc13136db00b639eec7a1da9c"
+	goldenAttTimestamp             uint64 = 1700000000000
+	goldenAttAggregatePower        uint64 = 175
+	goldenAttPreviousTime          uint64 = 1699999000000
+	goldenAttNextTime              uint64 = 1700001000000
+	goldenAttAttestationTime       uint64 = 1700000500000
+	goldenAttLastConsensus         uint64 = 1699998000000
 )
 
 // goldenAttestationRequest builds the SignOracleAttestation request from the
@@ -88,11 +88,16 @@ var operationAllowlist = []string{
 	"/layer.reporter.MsgUnjailReporter",
 }
 
-// startTestServer creates an in-memory mTLS gRPC server backed by the golden
-// fixed key with the default operation allowlist. Authorization is by OPERATION
-// (no per-cert CN gating), so any client presenting a CA-chained cert may
-// connect; the handlers themselves enforce what may be signed.
+// startTestServer returns a signer client. When SIGNER_URL is set it connects to
+// that live signer (see live_signer_test.go); otherwise it creates an in-memory
+// mTLS gRPC server backed by the golden fixed key with the default operation
+// allowlist. Authorization is by OPERATION (no per-cert CN gating), so any client
+// presenting a CA-chained cert may connect; the handlers themselves enforce what
+// may be signed.
 func startTestServer(t *testing.T) (signerv1.BridgeSignerClient, func()) {
+	if client, cleanup, ok := dialLiveSigner(t); ok {
+		return client, cleanup
+	}
 	return startTestServerAllow(t, operationAllowlist)
 }
 
@@ -301,6 +306,7 @@ func recoversToGoldenPubKey(t *testing.T, sig, hash []byte) bool {
 // allowlist (report submit + the two unjail operations) and that the resulting
 // 64-byte signature recovers to the expected key.
 func TestServer_SignTx_AllowedMsg(t *testing.T) {
+	skipIfLive(t, "asserts signature recovery to the golden test key")
 	client, cleanup := startTestServer(t)
 	defer cleanup()
 
@@ -373,6 +379,7 @@ func TestServer_SignTx_ZeroMessages(t *testing.T) {
 // TestServer_SignTx_EmptyAllowlist proves that with no allowed_msg_types
 // configured, SignTx rejects everything — including an otherwise-common type.
 func TestServer_SignTx_EmptyAllowlist(t *testing.T) {
+	skipIfLive(t, "configures a server-side empty allowlist; not applicable to a live signer")
 	client, cleanup := startTestServerAllow(t, nil)
 	defer cleanup()
 
@@ -398,6 +405,7 @@ func TestServer_SignTx_EmptyAllowlist(t *testing.T) {
 // end-to-end over the mTLS transport with the golden inputs and asserts the
 // recomputed snapshot and 64-byte signature match the golden vector.
 func TestServer_SignOracleAttestation_OverWire(t *testing.T) {
+	skipIfLive(t, "asserts the golden attestation snapshot/signature vector")
 	client, cleanup := startTestServer(t)
 	defer cleanup()
 
@@ -471,6 +479,7 @@ func startTestServerChainID(t *testing.T, chainID string) (signerv1.BridgeSigner
 
 // TestServer_GetChainID verifies the signer reports its configured chain ID.
 func TestServer_GetChainID(t *testing.T) {
+	skipIfLive(t, "asserts a fixed server-side chain ID")
 	client, cleanup := startTestServerChainID(t, "layertest-5")
 	defer cleanup()
 
@@ -486,6 +495,7 @@ func TestServer_GetChainID(t *testing.T) {
 // TestServer_GetChainID_NotConfigured verifies GetChainID returns
 // FailedPrecondition when no chain ID is configured on the signer.
 func TestServer_GetChainID_NotConfigured(t *testing.T) {
+	skipIfLive(t, "a live signer has a chain ID configured")
 	client, cleanup := startTestServer(t) // no chain id configured
 	defer cleanup()
 
