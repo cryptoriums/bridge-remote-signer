@@ -27,6 +27,8 @@ func MakeKeyringCodec() codec.Codec {
 	return codec.NewProtoCodec(registry)
 }
 
+// BuildPasswordReader returns the keyring passphrase source: the password file
+// if configured, otherwise stdin (must be a terminal).
 func BuildPasswordReader(passwordFile string) (io.Reader, error) {
 	if passwordFile != "" {
 		return buildFilePasswordReader(passwordFile)
