@@ -117,6 +117,12 @@ func runDaemon(configPath string) error {
 		if err != nil {
 			return fmt.Errorf("load consensus connection key: %w", err)
 		}
+		// Fail closed if the state file is missing/deleted/un-mounted rather than
+		// silently fresh-starting the signer (double-sign risk). start never creates
+		// the state file; bootstrap a new signer once with the 'init-state' command.
+		if err := consensus.RequireStateFile(cfg.Consensus.StateFile); err != nil {
+			return fmt.Errorf("consensus: %w", err)
+		}
 		filePV, err := consensus.LoadCometFilePV(cfg.Consensus.KeyFile, cfg.Consensus.StateFile)
 		if err != nil {
 			return fmt.Errorf("consensus: load validator key: %w", err)
