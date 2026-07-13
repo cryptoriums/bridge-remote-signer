@@ -64,8 +64,16 @@ func notPrimaryResponse(req privvalproto.Message) (privvalproto.Message, bool) {
 // through unconditionally so the connection stays healthy.
 func gatedHandler(arbiter *PrimaryArbiter, id string, next privval.ValidationRequestHandlerFunc) privval.ValidationRequestHandlerFunc {
 	return func(pv types.PrivValidator, req privvalproto.Message, chainID string) (privvalproto.Message, error) {
-		if refusal, isSign := notPrimaryResponse(req); isSign && !arbiter.Acquire(id) {
-			return refusal, nil
+		refusal, isSign := notPrimaryResponse(req)
+		if isSign {
+			if !arbiter.Acquire(id) {
+				return refusal, nil
+			}
+			// The elected primary just had a consensus vote/proposal signed, so it is the
+			// active signing node. Recording it here (rather than on bridge signatures, which
+			// both nodes always send) makes signer_active_node track the consensus primary,
+			// so it changes only on a real failover.
+			metrics.RecordSign(id)
 		}
 		return next(pv, req, chainID)
 	}

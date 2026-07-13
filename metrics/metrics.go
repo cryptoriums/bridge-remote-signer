@@ -19,9 +19,9 @@ var (
 		Help: "Whether the bridge signer is up and serving (always 1 when scrapeable).",
 	})
 
-	// activeNode is 1 for the node IP whose signature was most recently accepted, and
-	// 0 for every other node the signer has seen. A signing-node switch (failover)
-	// flips two series, so changes(signer_active_node[...]) detects it for alerting.
+	// activeNode is 1 for the node IP that is the current consensus primary signer, and
+	// 0 for every other node the signer has seen. A real failover flips two series, so
+	// changes(signer_active_node[...]) detects it for alerting.
 	activeNode = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "signer_active_node",
 		Help: "1 for the node IP whose signature was most recently accepted, 0 for others.",
@@ -53,10 +53,11 @@ func SetTargetConnected(target string, connected bool) {
 	targetConnected.WithLabelValues(target).Set(v)
 }
 
-// RecordSign marks the given peer address's IP as the current signing node: its gauge
-// is set to 1 and every previously-seen node's gauge to 0. The ephemeral port is
-// stripped so reconnects from the same node don't look like a switch. Call it after a
-// signature is accepted (SignBridgeCheckpoint / SignOracleAttestation).
+// RecordSign marks the given node address's IP as the current active (primary) signing
+// node: its gauge is set to 1 and every previously-seen node's gauge to 0. The port is
+// stripped so reconnects from the same node don't look like a switch. It is called from
+// the consensus primary path (the elected node having a vote/proposal signed), so
+// signer_active_node tracks the consensus primary and changes only on a real failover.
 func RecordSign(remoteAddr string) {
 	ip := hostOnly(remoteAddr)
 	if ip == "" {
