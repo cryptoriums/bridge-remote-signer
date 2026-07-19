@@ -24,7 +24,6 @@ import (
 
 	signerv1 "github.com/tellor-io/bridge-remote-signer/api/gen/signer/v1"
 	"github.com/tellor-io/bridge-remote-signer/logging"
-	"github.com/tellor-io/bridge-remote-signer/metrics"
 	"github.com/tellor-io/bridge-remote-signer/signer"
 )
 
@@ -532,9 +531,6 @@ func (s *Server) SignBridgeCheckpoint(ctx context.Context, req *signerv1.SignBri
 		"success", true,
 	)
 
-	// Mark the node that just signed as the active signing node (for the
-	// signer_active_node metric and the signing-node-switch alert).
-	metrics.RecordSign(peerAddr(ctx))
 	return &signerv1.SignBridgeCheckpointResponse{
 		Signature:  sig,
 		Checkpoint: checkpoint,
@@ -615,7 +611,6 @@ func (s *Server) SignOracleAttestation(ctx context.Context, req *signerv1.SignOr
 		"success", true,
 	)
 
-	metrics.RecordSign(peerAddr(ctx))
 	return &signerv1.SignOracleAttestationResponse{
 		Signature: sig,
 		Snapshot:  snapshot,
