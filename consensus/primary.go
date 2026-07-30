@@ -1,6 +1,8 @@
 package consensus
 
 import (
+	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -126,4 +128,30 @@ func (a *PrimaryArbiter) Primary() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.primary
+}
+
+// PrimaryHost returns just the host of the current primary, with any scheme and
+// port stripped ("" if none elected yet). The privval ids are dial targets such
+// as "tcp://1.2.3.4:26659", while a node connecting to the gRPC API arrives from
+// an ephemeral port ("1.2.3.4:32934"), so callers gating gRPC requests on the
+// elected node must compare hosts rather than full addresses.
+func (a *PrimaryArbiter) PrimaryHost() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return HostOf(a.primary)
+}
+
+// HostOf strips an optional scheme and port, turning ids like
+// "tcp://1.2.3.4:26659" or "1.2.3.4:32934" into "1.2.3.4".
+func HostOf(addr string) string {
+	if addr == "" {
+		return ""
+	}
+	if i := strings.Index(addr, "://"); i >= 0 {
+		addr = addr[i+3:]
+	}
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		return host
+	}
+	return addr
 }

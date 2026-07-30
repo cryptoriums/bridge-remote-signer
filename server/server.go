@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	signerv1 "github.com/tellor-io/bridge-remote-signer/api/gen/signer/v1"
+	"github.com/tellor-io/bridge-remote-signer/consensus"
 	"github.com/tellor-io/bridge-remote-signer/logging"
 	"github.com/tellor-io/bridge-remote-signer/signer"
 )
@@ -72,6 +73,18 @@ type Config struct {
 	AllowedMsgTypes []string
 	// ChainID is the cosmos chain ID, returned by GetChainID.
 	ChainID string
+
+	// PrimaryHost reports the host of the currently elected consensus primary
+	// ("" when no primary election is configured or none is elected yet). When
+	// set, the per-block vote-extension RPCs (SignBridgeCheckpoint,
+	// SignOracleAttestation) are served only for that host, matching the
+	// active-passive gate already applied to privval vote signing.
+	//
+	// Deliberately NOT applied to SignTx/Sign/SignRaw: the reporter signs its
+	// report transactions through this same signer and runs independently of
+	// which node holds consensus primary, so gating those would break reporting
+	// whenever the reporter does not sit on the primary node.
+	PrimaryHost func() string
 
 	// CheckpointGuardStatePath is the path to the small high-water-mark file
 	// used by the SignBridgeCheckpoint monotonic replay guard. Empty => the
@@ -128,6 +141,7 @@ func New(s signer.Signer, logger *logging.Logger, cfg Config) (*Server, error) {
 	interceptor := chainUnaryInterceptors(
 		newUnaryInterceptor(logger, cfg.RequestTimeout),
 		newEnabledRPCInterceptor(enabled),
+		newPrimaryGateInterceptor(cfg.PrimaryHost, logger),
 	)
 
 	grpcServer := grpc.NewServer(
@@ -630,6 +644,52 @@ func peerAddr(ctx context.Context) string {
 }
 
 // logs the remote peer address for each connection
+// primaryGatedRPCs are the per-block vote-extension RPCs. A standby node still
+// runs consensus and asks for these every block, but its precommit is refused by
+// the privval gate, so its vote extension can never reach a block. Serving them
+// is wasted work that also puts the standby's requests in front of the primary's.
+//
+// Only these are gated. GetPublicKey/GetAddress/GetChainID are read-only, and
+// SignTx/Sign/SignRaw/SignInitial are not per-block consensus paths — the
+// reporter signs its report transactions via SignTx through this same signer, so
+// gating those would break reporting whenever the reporter is not co-located
+// with the elected primary.
+var primaryGatedRPCs = map[string]struct{}{
+	"/signer.v1.BridgeSigner/SignBridgeCheckpoint":  {},
+	"/signer.v1.BridgeSigner/SignOracleAttestation": {},
+}
+
+// newPrimaryGateInterceptor refuses the per-block vote-extension RPCs for any
+// node that is not the elected consensus primary, so vote-extension signing
+// follows the same active-passive election as privval vote signing. It fails
+// open (serves the request) when no election is configured or no primary has
+// been elected yet, so a misconfiguration can never stop the primary signing.
+func newPrimaryGateInterceptor(primaryHost func() string, logger *logging.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		if primaryHost == nil {
+			return handler(ctx, req)
+		}
+		if _, gated := primaryGatedRPCs[info.FullMethod]; !gated {
+			return handler(ctx, req)
+		}
+		want := primaryHost()
+		if want == "" {
+			return handler(ctx, req)
+		}
+		p, ok := peer.FromContext(ctx)
+		if !ok {
+			return handler(ctx, req)
+		}
+		got := consensus.HostOf(p.Addr.String())
+		if got == want {
+			return handler(ctx, req)
+		}
+		logger.Debug("refusing vote-extension sign request from non-primary node",
+			"method", info.FullMethod, "from", got, "primary", want)
+		return nil, status.Error(codes.FailedPrecondition, "not the primary signer")
+	}
+}
+
 func newUnaryInterceptor(logger *logging.Logger, timeout time.Duration) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,

@@ -109,6 +109,11 @@ func runDaemon(configPath string) error {
 	defer ctxCancel()
 
 	var consensusWg sync.WaitGroup
+	// Declared out here so the gRPC server can gate the per-block vote-extension
+	// RPCs on the same elected primary. Stays nil when consensus signing or the
+	// primary election is not configured, which leaves those RPCs ungated.
+	var arbiter *consensus.PrimaryArbiter
+
 	if cfg.Consensus.Enabled() {
 		cometLogger := log.NewTMLogger(log.NewSyncWriter(os.Stdout))
 
@@ -138,7 +143,6 @@ func runDaemon(configPath string) error {
 		// until the primary goes idle. Empty config => active-active (arbiter nil).
 		targets := cfg.Consensus.TargetList()
 
-		var arbiter *consensus.PrimaryArbiter
 		failoverTimeout, err := cfg.Consensus.FailoverTimeout()
 		if err != nil {
 			return fmt.Errorf("consensus: %w", err)
@@ -196,6 +200,13 @@ func runDaemon(configPath string) error {
 	enabledRPCs := server.EnabledRPCsFromConfig(cfg.Server.EnabledRPCs)
 
 	// Build and register the gRPC server.
+	// Vote-extension RPCs follow the same primary election as privval signing.
+	// Nil when no election is configured, which leaves them ungated.
+	var primaryHost func() string
+	if arbiter != nil {
+		primaryHost = arbiter.PrimaryHost
+	}
+
 	srv, err := server.New(s, logger, server.Config{
 		ListenAddr:               cfg.Server.ListenAddr,
 		RequestTimeout:           cfg.Server.RequestTimeout,
@@ -206,6 +217,7 @@ func runDaemon(configPath string) error {
 		CheckpointGuardStatePath: cfg.CheckpointGuardStatePath(),
 		EnabledRPCs:              enabledRPCs,
 		EnableReflection:         cfg.Server.EnableReflection,
+		PrimaryHost:              primaryHost,
 	})
 	if err != nil {
 		return fmt.Errorf("build gRPC server: %w", err)
