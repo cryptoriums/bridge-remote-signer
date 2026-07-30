@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -137,21 +136,28 @@ func runDaemon(configPath string) error {
 		// Optional active-passive primary election: when a failover timeout is
 		// configured, only the elected node is signed for; others are refused
 		// until the primary goes idle. Empty config => active-active (arbiter nil).
+		targets := cfg.Consensus.TargetList()
+
 		var arbiter *consensus.PrimaryArbiter
 		failoverTimeout, err := cfg.Consensus.FailoverTimeout()
 		if err != nil {
 			return fmt.Errorf("consensus: %w", err)
 		}
 		if failoverTimeout > 0 {
-			arbiter = consensus.NewPrimaryArbiter(failoverTimeout, cometLogger)
-			logger.Info("consensus primary election enabled (active-passive)", "failover_timeout", failoverTimeout.String())
+			// With prefer_target_order the targets double as a priority list, so
+			// the first reachable one signs and the signer fails back to it.
+			var preferOrder []string
+			if cfg.Consensus.PreferTargetOrder {
+				preferOrder = targets
+			}
+			arbiter = consensus.NewPreferringPrimaryArbiter(failoverTimeout, preferOrder, cometLogger)
+			logger.Info("consensus primary election enabled (active-passive)",
+				"failover_timeout", failoverTimeout.String(),
+				"prefer_target_order", cfg.Consensus.PreferTargetOrder,
+			)
 		}
 
-		for _, raw := range strings.Split(cfg.Consensus.Targets, ",") {
-			target := strings.TrimSpace(raw)
-			if target == "" {
-				continue
-			}
+		for _, target := range targets {
 			consensusWg.Add(1)
 			go func(t string) {
 				defer consensusWg.Done()

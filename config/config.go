@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -45,6 +46,27 @@ type ConsensusConfig struct {
 	// keeps the active-active behavior (every node signed, relying on the
 	// priv_validator_state guard to prevent double-signs).
 	PrimaryFailoverTimeout string `yaml:"primary_failover_timeout"`
+
+	// PreferTargetOrder treats Targets as a priority list: the first target that
+	// is reachable always signs, and the signer fails back to it as soon as it
+	// returns. Without it the node that took over during an outage keeps signing
+	// until it goes idle. Only meaningful together with PrimaryFailoverTimeout.
+	PreferTargetOrder bool `yaml:"prefer_target_order"`
+}
+
+// TargetList returns the configured consensus targets in declaration order,
+// trimmed and with empty entries removed. With PreferTargetOrder set, earlier
+// entries are preferred for the primary role.
+func (c *ConsensusConfig) TargetList() []string {
+	var targets []string
+	for _, raw := range strings.Split(c.Targets, ",") {
+		target := strings.TrimSpace(raw)
+		if target == "" {
+			continue
+		}
+		targets = append(targets, target)
+	}
+	return targets
 }
 
 // Enabled returns true when consensus signing is configured.
