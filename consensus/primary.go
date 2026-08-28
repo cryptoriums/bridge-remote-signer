@@ -64,6 +64,24 @@ func (a *PrimaryArbiter) Acquire(id string) bool {
 	}
 }
 
+// Release clears id as primary when its privval connection is no longer usable.
+// This lets a connected standby take over immediately instead of waiting for the
+// idle timeout. A stale disconnect from a non-primary target has no effect.
+func (a *PrimaryArbiter) Release(id string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	switch {
+	case a.primary != id:
+		return false
+	default:
+		a.logger.Info("consensus primary signer disconnected", "primary", id)
+		a.primary = ""
+		a.lastReq = time.Time{}
+		return true
+	}
+}
+
 // Primary returns the current primary id ("" if none elected yet).
 func (a *PrimaryArbiter) Primary() string {
 	a.mu.Lock()
