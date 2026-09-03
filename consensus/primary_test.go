@@ -89,6 +89,40 @@ func TestPrimaryArbiterPrefersFirstTarget(t *testing.T) {
 	}
 }
 
+// TestPrimaryHostMatching covers the gRPC gate: privval ids are dial targets
+// with a scheme and fixed port, while a node calling the gRPC API arrives from
+// an ephemeral port, so only the hosts can be compared.
+func TestPrimaryHostMatching(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"tcp://15.204.211.26:26659", "15.204.211.26"},
+		{"15.204.211.26:32934", "15.204.211.26"},
+		{"116.202.221.88:26661", "116.202.221.88"},
+		{"[2604:2dc0:101:200::d8e]:26656", "2604:2dc0:101:200::d8e"},
+		{"", ""},
+	} {
+		if got := HostOf(tc.in); got != tc.want {
+			t.Errorf("HostOf(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+
+	a := NewPreferringPrimaryArbiter(time.Minute, []string{"tcp://15.204.211.26:26659"}, nil)
+	if a.PrimaryHost() != "" {
+		t.Fatalf("no primary elected yet, got %q", a.PrimaryHost())
+	}
+	a.Acquire("tcp://15.204.211.26:26659")
+	if got := a.PrimaryHost(); got != "15.204.211.26" {
+		t.Fatalf("PrimaryHost() = %q, want 15.204.211.26", got)
+	}
+	// A gRPC request from the same node on an ephemeral port must match.
+	if HostOf("15.204.211.26:32934") != a.PrimaryHost() {
+		t.Fatal("gRPC peer from the primary node should match the elected primary")
+	}
+	// A request from the standby must not.
+	if HostOf("116.202.221.88:34282") == a.PrimaryHost() {
+		t.Fatal("gRPC peer from the standby must not match the elected primary")
+	}
+}
+
 // TestPrimaryArbiterUnlistedRanksLast ensures a target missing from the
 // preference list never preempts a listed one, and cannot be preempted by
 // rank alone once it holds the role legitimately.
