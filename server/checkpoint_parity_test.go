@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/sha256"
@@ -229,7 +230,8 @@ func TestParity_SignBridgeCheckpoint_Handler(t *testing.T) {
 		})
 	}
 
-	// Reset guard then prove the monotonic replay guard rejects a re-send.
+	// Reset guard, then prove an identical re-send is served from the memo while the
+	// high-water mark still refuses to advance.
 	freshGuard, _ := newCheckpointReplayGuard("")
 	srv.checkpointGuard = freshGuard
 	ds, _ := computeDomainSeparator(MainnetChainID)
@@ -243,11 +245,38 @@ func TestParity_SignBridgeCheckpoint_Handler(t *testing.T) {
 		ChainId:            MainnetChainID,
 		ExpectedCheckpoint: wantCP,
 	}
-	if _, err := srv.SignBridgeCheckpoint(context.Background(), req); err != nil {
+	first, err := srv.SignBridgeCheckpoint(context.Background(), req)
+	if err != nil {
 		t.Fatalf("first SignBridgeCheckpoint should succeed: %v", err)
 	}
-	if _, err := srv.SignBridgeCheckpoint(context.Background(), req); err == nil {
-		t.Fatal("replay of same validator_timestamp must be rejected by the replay guard")
+
+	// A byte-identical re-send is answered from the guard's memo with the SAME
+	// signature rather than rejected. The node re-sends the current checkpoint every
+	// block, and rejecting those strands the checkpoint permanently unsigned whenever
+	// the first signature fails to reach the chain. Nothing new is signed here: the
+	// handler has already recomputed the checkpoint and asserted it matches.
+	second, err := srv.SignBridgeCheckpoint(context.Background(), req)
+	if err != nil {
+		t.Fatalf("identical re-send should be served from the memo: %v", err)
+	}
+	if !bytes.Equal(first.Signature, second.Signature) {
+		t.Fatalf("memoized replay returned a different signature:\n first  %x\n second %x",
+			first.Signature, second.Signature)
+	}
+	if !bytes.Equal(first.Checkpoint, second.Checkpoint) {
+		t.Fatal("memoized replay returned a different checkpoint")
+	}
+
+	// The guard itself still refuses to advance on a repeat, and refuses to serve a
+	// DIFFERENT checkpoint at that timestamp — equivocation still fails closed.
+	// (Unit coverage for both is in replay_guard_memo_test.go.)
+	if err := srv.checkpointGuard.CheckAndAdvance(goldenValidatorTime); err == nil {
+		t.Fatal("replay of same validator_timestamp must not advance the high-water mark")
+	}
+	otherCheckpoint := append([]byte(nil), wantCP...)
+	otherCheckpoint[0] ^= 0xFF
+	if _, ok := srv.checkpointGuard.CachedSignature(goldenValidatorTime, otherCheckpoint); ok {
+		t.Fatal("a different checkpoint at the same timestamp must never be served from the memo")
 	}
 }
 
