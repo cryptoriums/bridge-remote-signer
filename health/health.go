@@ -21,6 +21,12 @@ import (
 //
 //	GET /healthz  — liveness:  is the process alive?
 //	GET /readyz   — readiness: is the signer backend ready to sign?
+//	GET /address  — the signer's bech32 account address (?prefix=..., default
+//	                "tellor"). The address is public information derived from the
+//	                public key, so it is served here without mTLS: consumers like
+//	                the monitor discover it from the signer as the single source
+//	                of truth, and fail loudly if the signer is unreachable.
+//	                Signing itself remains exclusively behind the mTLS gRPC API.
 //	GET /metrics  — Prometheus metrics. Currently exposes only `up` (set to 1
 //	                while the process is serving), so a scraper can detect when
 //	                the signer is down (no scrape / `up == 0`).
@@ -43,6 +49,7 @@ func New(s signer.Signer, logger *logging.Logger, listenAddr string) *Checker {
 	mux.HandleFunc("/healthz", c.liveness)
 	mux.HandleFunc("/readyz", c.readiness)
 	mux.Handle("/metrics", metricsHandler())
+	mux.HandleFunc("/address", c.address)
 
 	c.httpServer = &http.Server{
 		Addr:         listenAddr,
@@ -80,6 +87,26 @@ func (c *Checker) Stop(ctx context.Context) error {
 // liveness handles GET /healthz
 // Returns 200 if the process is running. Never fails as long as the
 // process is alive.
+// address serves the signer's bech32 account address as JSON. Public data only
+// (derived from the public key); no authentication, mirroring /metrics.
+func (c *Checker) address(w http.ResponseWriter, r *http.Request) {
+	prefix := r.URL.Query().Get("prefix")
+	if prefix == "" {
+		prefix = "tellor"
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	addr, err := signer.Bech32Address(ctx, c.signer, prefix)
+	if err != nil {
+		c.logger.Error("address endpoint failed", "error", err)
+		http.Error(w, fmt.Sprintf("derive address: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, "{\"address\":%q}\n", addr)
+}
+
 func (c *Checker) liveness(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprint(w, "ok")

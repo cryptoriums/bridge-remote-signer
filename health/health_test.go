@@ -2,6 +2,8 @@ package health
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -74,3 +76,42 @@ func TestMetricsHandlerRegisteredOnChecker(t *testing.T) {
 		t.Fatalf("expected `up 1` from /metrics route, got:\n%s", rec.Body.String())
 	}
 }
+
+// The /address endpoint serves the bech32 address without authentication — the
+// monitor's single source of truth for the reporter identity.
+func TestAddressEndpoint(t *testing.T) {
+	pub, _ := hex.DecodeString("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798")
+	logger, err := logging.New("error", "json")
+	if err != nil {
+		t.Fatalf("logging.New: %v", err)
+	}
+	c := New(pubStubSigner{pub: pub}, logger, "127.0.0.1:0")
+
+	rec := httptest.NewRecorder()
+	c.address(rec, httptest.NewRequest("GET", "/address", nil))
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, body %q", rec.Code, rec.Body.String())
+	}
+	var out struct{ Address string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("bad json: %v", err)
+	}
+	if !strings.HasPrefix(out.Address, "tellor1") {
+		t.Fatalf("address %q lacks default prefix", out.Address)
+	}
+
+	// A signer that cannot provide a key must fail loudly, never return a guess.
+	rec = httptest.NewRecorder()
+	c2 := New(stubSigner{}, logger, "127.0.0.1:0")
+	c2.address(rec, httptest.NewRequest("GET", "/address", nil))
+	if rec.Code != 500 {
+		t.Fatalf("expected 500 for unavailable key, got %d", rec.Code)
+	}
+}
+
+type pubStubSigner struct {
+	stubSigner
+	pub []byte
+}
+
+func (p pubStubSigner) GetPublicKey(context.Context) ([]byte, error) { return p.pub, nil }
