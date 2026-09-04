@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -104,7 +105,9 @@ func (c *Checker) address(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = fmt.Fprintf(w, "{\"address\":%q}\n", addr)
+	_ = json.NewEncoder(w).Encode(struct {
+		Address string `json:"address"`
+	}{Address: addr})
 }
 
 func (c *Checker) liveness(w http.ResponseWriter, r *http.Request) {
