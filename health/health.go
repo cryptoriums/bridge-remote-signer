@@ -104,7 +104,7 @@ func (c *Checker) address(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, "{\"address\":%q}\n", addr)
+	_, _ = fmt.Fprintf(w, "{\"address\":%q}\n", addr)
 }
 
 func (c *Checker) liveness(w http.ResponseWriter, r *http.Request) {
