@@ -239,27 +239,9 @@ func (s *Server) SignRaw(_ context.Context, _ *signerv1.SignRawRequest) (*signer
 // using the given prefix (e.g. "tellor"). Allows the reporter to discover its
 // own address at startup without hard-coding it in config.
 func (s *Server) GetAddress(ctx context.Context, req *signerv1.GetAddressRequest) (*signerv1.GetAddressResponse, error) {
-	if req.Prefix == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "prefix must not be empty")
-	}
-
-	pubKeyBytes, err := s.signer.GetPublicKey(ctx)
+	bech32Addr, err := signer.Bech32Address(ctx, s.signer, req.Prefix)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get public key: %v", err)
-	}
-
-	if len(pubKeyBytes) != 33 {
-		return nil, status.Errorf(codes.Internal, "invalid public key length %d, expected 33", len(pubKeyBytes))
-	}
-
-	// Use the Cosmos SDK secp256k1 PubKey type to derive the address via
-	// sha256 + ripemd160 of the compressed public key — the standard Cosmos derivation.
-	pubKey := &cosmossecp.PubKey{Key: pubKeyBytes}
-	addrBytes := pubKey.Address().Bytes()
-
-	bech32Addr, err := bech32.ConvertAndEncode(req.Prefix, addrBytes)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "bech32 encode failed: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "derive address: %v", err)
 	}
 
 	return &signerv1.GetAddressResponse{Address: bech32Addr}, nil
