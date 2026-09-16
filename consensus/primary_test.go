@@ -129,6 +129,29 @@ func TestPrimaryArbiterWithoutPreferenceKeepsRole(t *testing.T) {
 	}
 }
 
+func TestPrimaryArbiterReleaseAllowsImmediateFailover(t *testing.T) {
+	a := NewPrimaryArbiter(time.Minute, nil)
+	base := time.Unix(1000, 0)
+	a.now = func() time.Time { return base }
+
+	switch {
+	case !a.Acquire("nodeA", 1):
+		t.Fatal("first node should become primary")
+	case a.Release("nodeB"):
+		t.Fatal("non-primary release should have no effect")
+	case a.Primary() != "nodeA":
+		t.Fatalf("primary = %q after stale release, want nodeA", a.Primary())
+	case !a.Release("nodeA"):
+		t.Fatal("primary release should succeed")
+	case a.Primary() != "":
+		t.Fatalf("primary = %q after release, want empty", a.Primary())
+	case !a.Acquire("nodeB", 1):
+		t.Fatal("standby should take over immediately after primary release")
+	case a.Primary() != "nodeB":
+		t.Fatalf("primary = %q after failover, want nodeB", a.Primary())
+	}
+}
+
 // TestAcquireDefersFailBackWhileBehind covers the failure seen in production on
 // 2026-09-09: the preferred node stalled, the standby took over and signed ahead,
 // and the moment the preferred node came back it reclaimed the role while still

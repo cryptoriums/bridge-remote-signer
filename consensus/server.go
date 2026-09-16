@@ -40,8 +40,14 @@ func RunDialClient(
 	}
 	dialer := privval.DialTCPFn(targetAddr, 8*time.Second, connPrivKey)
 	metrics.SetTargetConnected(targetAddr, false) // start disconnected until the first dial succeeds
-	runDialClient(ctx, dialer, chainID, pv, handler, logger.With("remote", targetAddr),
-		func(connected bool) { metrics.SetTargetConnected(targetAddr, connected) })
+	runDialClient(ctx, dialer, chainID, pv, handler, logger.With("remote", targetAddr), func(connected bool) {
+		metrics.SetTargetConnected(targetAddr, connected)
+		switch {
+		case connected:
+		case arbiter != nil:
+			arbiter.Release(targetAddr)
+		}
+	})
 }
 
 // notPrimaryResponse builds the refusal a non-primary node receives for a sign
