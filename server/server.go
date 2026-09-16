@@ -253,27 +253,9 @@ func (s *Server) SignRaw(_ context.Context, _ *signerv1.SignRawRequest) (*signer
 // using the given prefix (e.g. "tellor"). Allows the reporter to discover its
 // own address at startup without hard-coding it in config.
 func (s *Server) GetAddress(ctx context.Context, req *signerv1.GetAddressRequest) (*signerv1.GetAddressResponse, error) {
-	if req.Prefix == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "prefix must not be empty")
-	}
-
-	pubKeyBytes, err := s.signer.GetPublicKey(ctx)
+	bech32Addr, err := signer.Bech32Address(ctx, s.signer, req.Prefix)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get public key: %v", err)
-	}
-
-	if len(pubKeyBytes) != 33 {
-		return nil, status.Errorf(codes.Internal, "invalid public key length %d, expected 33", len(pubKeyBytes))
-	}
-
-	// Use the Cosmos SDK secp256k1 PubKey type to derive the address via
-	// sha256 + ripemd160 of the compressed public key — the standard Cosmos derivation.
-	pubKey := &cosmossecp.PubKey{Key: pubKeyBytes}
-	addrBytes := pubKey.Address().Bytes()
-
-	bech32Addr, err := bech32.ConvertAndEncode(req.Prefix, addrBytes)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "bech32 encode failed: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "derive address: %v", err)
 	}
 
 	return &signerv1.GetAddressResponse{Address: bech32Addr}, nil
@@ -504,8 +486,22 @@ func (s *Server) SignBridgeCheckpoint(ctx context.Context, req *signerv1.SignBri
 		switch {
 		case errors.Is(err, ErrReplayGuardRejected):
 			// Expected: the same valset checkpoint is resent every block until the valset
-			// changes (a >5% power shift or the ~2-week refresh), so the signer signs it
-			// once and rejects the repeats. Not an error condition — log at debug only.
+			// changes (a >5% power shift or the ~2-week refresh).
+			//
+			// Answer it from the memo when we hold the signature for this exact checkpoint.
+			// Step (6) already recomputed the checkpoint and asserted it equals the
+			// request's expected_checkpoint, and CachedSignature additionally requires a
+			// byte-identical match against what was signed at this timestamp — so a hit is
+			// the very message that produced this signature. We re-send public bytes and
+			// sign nothing new. Without this the node re-asks forever whenever the first
+			// signature fails to reach the chain, leaving the checkpoint unsigned by us.
+			if sig, ok := s.checkpointGuard.CachedSignature(req.ValidatorTimestamp, checkpoint); ok {
+				s.logger.Debug("SignBridgeCheckpoint replay guard: repeat checkpoint, returning memoized signature",
+					"request_id", req.RequestId,
+					"validator_timestamp", req.ValidatorTimestamp,
+				)
+				return &signerv1.SignBridgeCheckpointResponse{Signature: sig, Checkpoint: checkpoint}, nil
+			}
 			s.logger.Debug("SignBridgeCheckpoint replay guard: repeat checkpoint, not re-signing (expected until the valset changes)",
 				"request_id", req.RequestId,
 				"validator_timestamp", req.ValidatorTimestamp,
@@ -531,6 +527,17 @@ func (s *Server) SignBridgeCheckpoint(ctx context.Context, req *signerv1.SignBri
 	}
 	if len(sig) != 64 {
 		return nil, status.Errorf(codes.Internal, "invalid signature length %d, expected 64", len(sig))
+	}
+
+	// Memoize so a repeat of this exact checkpoint is answered from the guard rather
+	// than rejected. A persistence failure here costs only the memo — the signature
+	// just produced is still returned — so log it and continue.
+	if err := s.checkpointGuard.RecordSignature(req.ValidatorTimestamp, checkpoint, sig); err != nil {
+		s.logger.Error("SignBridgeCheckpoint: failed to memoize signature; a repeat of this checkpoint will be rejected",
+			"request_id", req.RequestId,
+			"validator_timestamp", req.ValidatorTimestamp,
+			"error", err.Error(),
+		)
 	}
 
 	s.logger.Info("SignBridgeCheckpoint completed",
