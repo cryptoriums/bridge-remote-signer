@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"sync"
@@ -20,6 +21,7 @@ import (
 	"github.com/tellor-io/bridge-remote-signer/config"
 	"github.com/tellor-io/bridge-remote-signer/consensus"
 	"github.com/tellor-io/bridge-remote-signer/health"
+	"github.com/tellor-io/bridge-remote-signer/logbuf"
 	"github.com/tellor-io/bridge-remote-signer/logging"
 	"github.com/tellor-io/bridge-remote-signer/server"
 	"github.com/tellor-io/bridge-remote-signer/signer"
@@ -115,7 +117,7 @@ func runDaemon(configPath string) error {
 	var arbiter *consensus.PrimaryArbiter
 
 	if cfg.Consensus.Enabled() {
-		cometLogger := log.NewTMLogger(log.NewSyncWriter(os.Stdout))
+		cometLogger := log.NewTMLogger(log.NewSyncWriter(io.MultiWriter(os.Stdout, logbuf.Default)))
 
 		connKey, err := consensus.GenOrLoadConnKey(cfg.Consensus.ConnKeyFile)
 		if err != nil {

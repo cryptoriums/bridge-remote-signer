@@ -5,9 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"time"
+
+	"github.com/tellor-io/bridge-remote-signer/logbuf"
 )
 
 // Logger wraps slog.Logger with audit-specific methods for the sidecar.
@@ -32,12 +35,13 @@ func New(level, format string) (*Logger, error) {
 		AddSource: slogLevel == slog.LevelDebug,
 	}
 
+	w := io.MultiWriter(os.Stdout, logbuf.Default)
 	var handler slog.Handler
 	switch format {
 	case "json":
-		handler = slog.NewJSONHandler(os.Stdout, opts)
+		handler = slog.NewJSONHandler(w, opts)
 	case "text":
-		handler = slog.NewTextHandler(os.Stdout, opts)
+		handler = slog.NewTextHandler(w, opts)
 	default:
 		return nil, fmt.Errorf("unknown log format %q (json|text)", format)
 	}
