@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/tellor-io/bridge-remote-signer/logbuf"
 	"github.com/tellor-io/bridge-remote-signer/logging"
 	"github.com/tellor-io/bridge-remote-signer/metrics"
 	"github.com/tellor-io/bridge-remote-signer/signer"
@@ -31,10 +34,12 @@ import (
 //	GET /metrics  — Prometheus metrics. Currently exposes only `up` (set to 1
 //	                while the process is serving), so a scraper can detect when
 //	                the signer is down (no scrape / `up == 0`).
+//	GET /logs     — recent log lines (?since_ms=UNIX ms). No authentication.
 type Checker struct {
 	signer     signer.Signer
 	logger     *logging.Logger
 	httpServer *http.Server
+	logsMu     sync.Mutex // one /logs at a time
 }
 
 // New creates a Checker that listens on listenAddr (e.g. "0.0.0.0:9192").
@@ -51,6 +56,7 @@ func New(s signer.Signer, logger *logging.Logger, listenAddr string) *Checker {
 	mux.HandleFunc("/readyz", c.readiness)
 	mux.Handle("/metrics", metricsHandler())
 	mux.HandleFunc("/address", c.address)
+	mux.HandleFunc("/logs", c.logs)
 
 	c.httpServer = &http.Server{
 		Addr:         listenAddr,
@@ -108,6 +114,30 @@ func (c *Checker) address(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(struct {
 		Address string `json:"address"`
 	}{Address: addr})
+}
+
+func (c *Checker) logs(w http.ResponseWriter, r *http.Request) {
+	if !c.logsMu.TryLock() {
+		http.Error(w, "another /logs request is in progress", http.StatusTooManyRequests)
+		return
+	}
+	defer c.logsMu.Unlock()
+	since := time.Now().Add(-5 * time.Minute).UnixMilli()
+	if s := r.URL.Query().Get("since_ms"); s != "" {
+		var err error
+		if since, err = strconv.ParseInt(s, 10, 64); err != nil {
+			http.Error(w, "since_ms must be UNIX milliseconds", http.StatusBadRequest)
+			return
+		}
+	}
+	lines, truncated := logbuf.Default.Lines(since, 3<<20)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	for _, l := range lines {
+		_, _ = fmt.Fprintln(w, l)
+	}
+	if truncated {
+		_, _ = fmt.Fprintln(w, "truncated: call again with since_ms set to the last line's time")
+	}
 }
 
 func (c *Checker) liveness(w http.ResponseWriter, r *http.Request) {

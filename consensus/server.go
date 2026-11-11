@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"time"
@@ -11,8 +12,10 @@ import (
 	"github.com/cometbft/cometbft/libs/protoio"
 	"github.com/cometbft/cometbft/privval"
 	privvalproto "github.com/cometbft/cometbft/proto/tendermint/privval"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cometbft/cometbft/types"
 
+	"github.com/tellor-io/bridge-remote-signer/logbuf"
 	"github.com/tellor-io/bridge-remote-signer/metrics"
 )
 
@@ -171,19 +174,56 @@ func serveConn(
 		if err != nil {
 			if err != io.EOF && ctx.Err() == nil {
 				logger.Error("privval read", "err", err)
+			} else if ctx.Err() == nil { // EOF: buffer only, not stdout
+				_, _ = fmt.Fprintf(logbuf.Default, "privval read remote=%s err=EOF\n", conn.RemoteAddr())
 			}
 			return
 		}
 
+		recv := time.Now()
+		voteTS := req.GetSignVoteRequest().GetVote().GetTimestamp() // before FilePV can overwrite it
+		if voteTS.IsZero() {
+			voteTS = req.GetSignProposalRequest().GetProposal().GetTimestamp()
+		}
 		res, handleErr := handler(pv, req, chainID)
+		handled := time.Since(recv)
 		if handleErr != nil {
 			logger.Error("privval handler", "err", handleErr)
 		}
 
 		_ = conn.SetWriteDeadline(time.Now().Add(deadline))
-		if _, err := wr.WriteMsg(&res); err != nil {
-			logger.Error("privval write", "err", err)
+		_, writeErr := wr.WriteMsg(&res)
+		logRequest(conn, req, res, handleErr, recv, handled, voteTS)
+		if writeErr != nil {
+			logger.Error("privval write", "err", writeErr)
 			return
 		}
 	}
+}
+
+// logRequest writes one line per vote/proposal request to the buffer only, not stdout.
+func logRequest(conn net.Conn, req, res privvalproto.Message, handleErr error, recv time.Time, handled time.Duration, voteTS time.Time) {
+	var m interface {
+		GetHeight() int64
+		GetRound() int32
+	}
+	kind := "proposal"
+	if r := req.GetSignVoteRequest(); r != nil {
+		m, kind = r.GetVote(), "prevote"
+		if r.GetVote().GetType() == cmtproto.PrecommitType {
+			kind = "precommit"
+		}
+	} else if r := req.GetSignProposalRequest(); r != nil {
+		m = r.GetProposal()
+	} else {
+		return
+	}
+	errText := res.GetSignedVoteResponse().GetError().GetDescription() + res.GetSignedProposalResponse().GetError().GetDescription()
+	if handleErr != nil {
+		errText = handleErr.Error()
+	}
+	_, _ = fmt.Fprintf(logbuf.Default, "privval request remote=%s type=%s height=%d round=%d recv=%s vote_ts=%s handle_ms=%.3f duration_ms=%.3f err=%q\n",
+		conn.RemoteAddr(), kind, m.GetHeight(), m.GetRound(), recv.UTC().Format(logbuf.TimeLayout),
+		voteTS.UTC().Format(logbuf.TimeLayout), float64(handled.Microseconds())/1000,
+		float64(time.Since(recv).Microseconds())/1000, errText)
 }

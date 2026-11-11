@@ -270,6 +270,19 @@ Defined in [api/proto/signer/v1/signer.proto](api/proto/signer/v1/signer.proto)
 Enabled RPCs can be individually switched off via `server.enabled_rpcs`
 (they return `Unimplemented`); the blind primitives cannot be switched on.
 
+## Recent logs
+
+`GET /logs` on the health port (no authentication) returns recent log lines kept
+in memory (64MB, lost on restart), plus one line per vote/proposal request and
+node disconnect.
+
+```bash
+curl "http://<signer-host>:9192/logs?since_ms=1731139410000"
+```
+
+Default is the last 5 minutes; `since_ms=0` returns all. A response stops at 3MB;
+call again from the last line's time. Use `recv` for arrival order.
+
 ## Health and metrics
 
 The HTTP server on `server.health_addr` (keep it off the public internet)
